@@ -1,0 +1,10 @@
+*.asv
+*.arf
+*.bat
+*.gif
+reports/*.*
+Coder/codegen/lib
+# tbb, libigl and eigen 
+C++external/eigen/*
+C++external/libigl/*
+C++external/tbb/*
