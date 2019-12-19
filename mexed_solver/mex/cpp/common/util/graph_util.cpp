@@ -139,7 +139,7 @@ namespace util {
 
 		if (!block_edges_num) {
 			v_same_color.clear();
-			v_same_color.resize(1);
+			v_same_color.resize(1, std::vector<int>{});
 			v_same_color[0].push_back(0);
 			return 1;
 		}
@@ -167,7 +167,7 @@ namespace util {
 		color(&color_vec.front(), get(vertex_index, g));
 		vertices_size_type num_colors = sequential_vertex_coloring(g, order, color);
 
-		v_same_color.clear(); v_same_color.resize(num_colors);
+		v_same_color.clear(); v_same_color.resize(num_colors, std::vector<int>{});
 		for (int i = 0; i < component_num; ++i)
 		{
 			v_same_color[color_vec[i]].push_back(i);

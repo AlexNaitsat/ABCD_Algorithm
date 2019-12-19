@@ -93,7 +93,7 @@ classdef OptimizationParams < handle
         %% mexed solver params
         run_mexed_solver =1;
         max_global_iterations =1;
-        parallel_mode  = 0;
+        parallel_mode  = 1;
     end
     
     methods

@@ -273,7 +273,7 @@ void mexFunction(int num_of_lhs,
 	model.SetSignedSVD(solverSpec.is_signed_svd);
 	clock_t end_init = clock();
 	runtime_seconds[RunTime::RestInitialization] = double(end_init - begin_init) / CLOCKS_PER_SEC;
-	std::cout << "\nTotal rest mesh initalization time=" << runtime_seconds[RunTime::RestInitialization];
+	//std::cout << "\nTotal rest mesh initalization time=" << runtime_seconds[RunTime::RestInitialization];
 
 	FieldDataToArray<double>(struct_pnt, "ls_interval", &model.ls_interval, 1);
 	FieldDataToArray<double>(struct_pnt, "ls_alpha",    &model.ls_alpha, 1);
@@ -344,6 +344,7 @@ void mexFunction(int num_of_lhs,
 		search_dirSpec.is_parallel = false;
 
 		model.return_search_dir = true;
+		std::cout << " \n Computing search direction:";
 		size_t serach_direction_beign = clock();
 		OptimizeABCD(search_dirSpec, model,
 			gradient, search_direction,
@@ -462,7 +463,7 @@ void mexFunction(int num_of_lhs,
 		std::cout << "\n-Total block processing  time=" << runtime_seconds[RunTime::BlockProcessing];
 	}
 	model.return_search_dir = false;
-
+	std::cout << " \n Optimization:";
 	clock_t BCD_optimization_begin = clock();
 	OptimizeABCD(solverSpec, model,
 				 gradient, search_direction,
@@ -472,18 +473,6 @@ void mexFunction(int num_of_lhs,
 	clock_t BCD_optimization_end = clock();
 	runtime_seconds[RunTime::Optimization] = double(BCD_optimization_end - BCD_optimization_begin) / CLOCKS_PER_SEC;
 	std::cout << "\n-Total optimization  time=" << runtime_seconds[RunTime::Optimization];
-
-	if (solverSpec.is_parallel && color_num)
-	{
-		std::cout << "\n Running in parallel\n";
-	}
-	else
-	{
-		std::cout << "\n Running sequnetially";
-		if (color_num)
-			std::cout << " with block coloring order";
-		std::cout << std::endl;
-	}
 
 	clock_t begin_output_save = clock();
 
@@ -501,7 +490,7 @@ void mexFunction(int num_of_lhs,
 	}
 	if (num_of_lhs >= 6) {
 		const int simplex_dim = 2;
-		std::cout << "\n Returns search direction";
+		//std::cout << "\n Returns search direction";
 		double *output_grad, *output_search_dir, *output_sing_vals, *output_distortions, *output_energy;
 		int deformed_size = deformed.size();
 		pointer_of_lhs[1] = mxCreateDoubleMatrix(deformed_size * 2, 1, mxREAL);
@@ -524,6 +513,7 @@ void mexFunction(int num_of_lhs,
 			model.return_search_dir = true;
 			(*updated) = *(original);
 			solverSpec.solver_num = 0;
+			std::cout << " \n Recompute distortions for statistics:";
 			OptimizeABCD(solverSpec, model,
 				gradient, search_direction,
 				original, updated, updated_copy,

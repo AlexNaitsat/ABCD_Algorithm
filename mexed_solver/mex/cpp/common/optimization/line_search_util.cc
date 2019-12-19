@@ -74,7 +74,10 @@ double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
 					   dfk[2 * i + 1] * search_direction[2 * i + 1];
 		
 		if (mxIsNaN((*output)[i][0]) || mxIsNaN((*output)[i][1]))
+		#pragma omp critical
+		{
 			std::cout << "\n Nan in LS-beggining output vertex=" << i;
+		}
 	}
 
 	double lhs = model.ComputeEnergyInBlock(*output, element_block);
@@ -92,7 +95,10 @@ double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
 			(*output)[i][1] =
 				deformed[i][1] + step_size * search_direction[2 * i + 1];
 			if (mxIsNaN((*output)[i][0]) || mxIsNaN((*output)[i][1]))
-				std::cout << "\n Nan in LS output vertex="<<i;
+			#pragma omp critical 
+			{
+				std::cout << "\n Nan in LS output vertex=" << i;
+			}
 		}
 
 		lhs = model.ComputeEnergyInBlock(*output,element_block);
@@ -124,8 +130,12 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 		dot_product += dfk[2 * i + 0] * search_direction[2 * i + 0] +
 			dfk[2 * i + 1] * search_direction[2 * i + 1];
 
-		if (mxIsNaN((*output)[i][0]) || mxIsNaN((*output)[i][1]))
-			std::cout << "\n Nan in LS-beggining output vertex=" << i;
+		if (mxIsNaN((*output)[i][0]) || mxIsNaN((*output)[i][1])) {
+			#pragma omp critical
+			{
+				std::cout << "\n Nan in LS-beggining output vertex=" << i;
+			}
+		}
 	}
 
 	double lhs = model.ComputeEnergyInBlock(*output, element_block);
@@ -144,8 +154,12 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 				deformed[i][0] + step_size * search_direction[2 * i + 0];
 			(*output)[i][1] =
 				deformed[i][1] + step_size * search_direction[2 * i + 1];
-			if (mxIsNaN((*output)[i][0]) || mxIsNaN((*output)[i][1]))
-				std::cout << "\n Nan in LS output vertex=" << i;
+			if (mxIsNaN((*output)[i][0]) || mxIsNaN((*output)[i][1])) {
+				#pragma omp critical 
+				{
+					std::cout << "\n Nan in LS output vertex=" << i;
+				}
+			}
 		}
 
 		lhs = model.ComputeEnergyInBlock(*output, element_block);

@@ -245,7 +245,7 @@ void PN_SearchDirectionInBlock(std::vector<Eigen::Vector2d>& original,
 		m_solver.Factorize();
 		m_solver.SolveDirichletConstraints(-gradient, &search_direction, free_vertex_block, bnd_vertex_block);
 		clock_t end = clock();
-		std::cout << "\nTotal eigen time=" << double(end - begin) / CLOCKS_PER_SEC << std::endl;
+		//std::cout << "\nTotal eigen time=" << double(end - begin) / CLOCKS_PER_SEC << std::endl;
 		//	<< ", analyze-solve:" << double(end - middle) / CLOCKS_PER_SEC << std::endl;
 	}
 	else {
@@ -313,7 +313,10 @@ void UpdateSolutionInBlock(std::vector<Eigen::Vector2d>& original,
 					double vi_gradient[] = { gradient[2 * vi] ,gradient[2 * vi + 1] };
 					grad_sq_norm += vi_gradient[0] * vi_gradient[0] + vi_gradient[1] * vi_gradient[1];
 					if (mxIsNaN(vi_gradient[0]) || mxIsNaN(vi_gradient[1])){
-						std::cout << "\n Nan in GRADIENT at vertex=" << vi;
+						#pragma omp critical
+						{
+							std::cout << "\n Nan in GRADIENT at vertex=" << vi;
+						}
 					}
 				}
 
@@ -328,7 +331,10 @@ void UpdateSolutionInBlock(std::vector<Eigen::Vector2d>& original,
 
 								if (mxIsNaN((*updated)[vi][0]) || mxIsNaN((*updated)[vi][1]))
 								{
-									std::cout << "\n Nan in Stationary-Block update in vertex" << vi;
+								    #pragma omp critical
+									{
+										std::cout << "\n Nan in Stationary-Block update in vertex" << vi;
+									}
 								}
 							}
 						else
@@ -382,7 +388,10 @@ void UpdateSolutionInBlock(std::vector<Eigen::Vector2d>& original,
 		}
 
 		if (mxIsNaN(step_time)){
-			std::cout << "\n step_time is NaN";
+			#pragma omp critical
+			{
+				std::cout << "\n step_time is NaN";
+			}
 		}
 		double reduced_energy =
 			common::optimization::ArmijoLineSearchEnhancedInBlock(
@@ -422,10 +431,10 @@ void OptimizeABCD(SolverSpecification& solverSpec,
 	std::map<int, bool>	thread_calls;
 
 	if (solverSpec.is_parallel && color_num) {
-		std::cout << "\n Running in parallel\n";
+		std::cout << " Running in parallel\n";
 	}
 	else {
-		std::cout << "\n Running sequentially";
+		std::cout << " Running sequentially";
 		if (color_num)
 		{
 			std::cout << " with block coloring order";
@@ -433,7 +442,7 @@ void OptimizeABCD(SolverSpecification& solverSpec,
 		std::cout << std::endl;
 	}
 	for (int i = 0; i < max_iter_num; i++) {
-		std::cout << ((solverSpec.solver_num) ? "PN" : "GD") << " Iteration " << i << std::endl;
+		std::cout << ((solverSpec.solver_num) ? "PN" : "GD") << " Iteration " << i; // << std::endl;
 
 		if (color_num) {
 			for (int ci = 0; ci < color_num; ci++) {
@@ -441,6 +450,7 @@ void OptimizeABCD(SolverSpecification& solverSpec,
 #pragma omp parallel for schedule(dynamic) if(solverSpec.is_parallel)
 				for (int i = 0; i < parallel_block_num; i++) {
 					int bi = blocks_by_color[ci][i];
+					#pragma omp critical
 					thread_calls[omp_get_thread_num()] = 1;
 
 					UpdateSolutionInBlock(updated_copy, model, updated, solverSpec,
@@ -473,4 +483,5 @@ void OptimizeABCD(SolverSpecification& solverSpec,
 	for (auto ti : thread_calls){
 		std::cout << ti.first << " ,";
 	}
+	std::cout << "\n";
 }

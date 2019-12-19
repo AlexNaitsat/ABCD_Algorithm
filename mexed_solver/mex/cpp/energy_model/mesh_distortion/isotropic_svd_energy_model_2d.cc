@@ -152,9 +152,12 @@ void IsotropicSVDEnergyModel2D::SetRestMesh( const Eigen::MatrixXd& position,
 
    
 	if (mxIsNaN(material_space(0, 0)) || mxIsNaN(material_space(0, 1))
-		|| mxIsNaN(material_space(1, 0)) || mxIsNaN(material_space(1, 1)))
-		std::cout << "\n MaterialSpace is NaN \n";
-
+		|| mxIsNaN(material_space(1, 0)) || mxIsNaN(material_space(1, 1))) {
+	    #pragma omp critical
+			{
+				std::cout << "\n MaterialSpace is NaN \n";
+			}
+	}
 
     inverse_material_space_[i] = material_space.inverse();
 
@@ -244,12 +247,19 @@ double IsotropicSVDEnergyModel2D::ComputeEnergyInBlock(
 
 		
 		if (mxIsNaN(svd_s_[i][0]) || mxIsNaN(svd_s_[i][1])) {
-			std::cout << "\nNAN  Singular values on triangle" << i << std::endl;
-			std::cout << "\n  Jacobian" << deformation_gradient << ", \n  World_space ="<< world_space;
+			#pragma omp critical 
+			{
+				std::cout << "\nNAN  Singular values on triangle" << i << std::endl;
+				std::cout << "\n  Jacobian" << deformation_gradient << ", \n  World_space =" << world_space;
+			}
 		}
 
-		if (abs(svd_s_[i][0]) < abs(svd_s_[i][1]))
-			std::cout << "\nAbsolute  Singular values are in wrong order on triangle"<<i<<std::endl;
+		if (abs(svd_s_[i][0]) < abs(svd_s_[i][1])) {
+			#pragma omp critical
+			{
+				std::cout << "\nAbsolute  Singular values are in wrong order on triangle" << i << std::endl;
+			}
+		}
 
 		if (record_invalid_elements)
 			is_element_valid[i] = util::IsElementValid(svd_s_[i]);
@@ -331,12 +341,15 @@ void IsotropicSVDEnergyModel2D::ComputeGradientInBlock(
 				(product(0, 0) * dpsi_ds[0] + product(1, 1) * dpsi_ds[1]);
 		}
 		if (mxIsNaN(dpsi[0]) || mxIsNaN(dpsi[1]) || mxIsNaN(dpsi[2]) || mxIsNaN(dpsi[3])) {
-			std::cout << "\nNAN in dpsi !!! ";
-			std::cout << ", sing vals=" << svd_s_[i][0] << ", " << svd_s_[i][1]<<std::endl;
-			std::cout << "\n  dpsi_ds" << dpsi_ds;
-			std::cout << "\n    Jacobian= ";
-				for (size_t j = 0; j < 4; j++) 
-					std::cout<<","<<deformation_gradient_differential_[4 * i + j];
+			#pragma omp critical 
+			{
+				std::cout << "\nNAN in dpsi !!! ";
+				std::cout << ", sing vals=" << svd_s_[i][0] << ", " << svd_s_[i][1] << std::endl;
+				std::cout << "\n  dpsi_ds" << dpsi_ds;
+				std::cout << "\n    Jacobian= ";
+				for (size_t j = 0; j < 4; j++)
+					std::cout << "," << deformation_gradient_differential_[4 * i + j];
+			}
 		}
 
 		(*gradient)[2 * triangle[1] + 0] += dpsi[0];
@@ -480,8 +493,11 @@ void IsotropicSVDEnergyModel2D::ComputeHessianNonzeroEntriesDirConstraintsInBloc
 		}
 	}
 	if (entry_list->size() == 0) {
-		std::cout << "Zero or Empty Hessian";
-		mexErrMsgTxt("encounter Zero or Empty Hessian");
+		#pragma omp critical
+		{
+			std::cout << "Zero or Empty Hessian";
+			//mexErrMsgTxt("encounter Zero or Empty Hessian");
+		}
 	}
 
 }
