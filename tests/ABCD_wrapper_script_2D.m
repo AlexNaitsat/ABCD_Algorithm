@@ -68,16 +68,30 @@ if isfield(options,'target_pos_normal') %setting positive orientation
 else
     tmesh.target_pos_normal =[0 0 1];
 end
+if ~isfield(options,'visualize_iterations')
+    options.visualize_iterations = 0;
+end
+
 options.fig_name= [options.fig_name postfix];
 %%
 if isfield(options,'planar_target') && options.planar_target 
     fV=fV(:,1:2); 
 end
-
-disp( ['-I-' newline 'This is a basic algorithm version, it includes visualization and result analysis' newline ...
-      '    To get a faster performance: disable visualization and analysis, set multi-thread mode with pardiso' newline ...
-      '    (flags draw_mesh, parallel_mode and use_pardiso)']);
-promp = ' ----- Press enter to continue ----';
-y = input(promp);
-
-fV  = UnifiedDistortionsOptimization(tmesh,fV,optParamList,options,movieOpt);
+if options.visualize_iterations
+    disp( ['-I- This is the Eigen version that reports and visualzes results for each iteration' newline ...
+        '    To get a faster performance: disable visualization and reports, set parallel flags and use pardiso solver' newline ...
+        '    (flags draw_mesh, parallel_mode and use_pardiso)']);
+    promp = ' ----- Press enter to continue ----';
+    y = input(promp);
+    
+    fV  = UnifiedDistortionsOptimizationIterVisualize(tmesh,fV,optParamList,options,movieOpt);
+else
+    disp( ['-I- This is the Eigen version' newline ...
+        'To get a faster performance:  set parallel flags and use pardiso solver' newline ...
+        '    (flags parallel_mode, parallel_grad, parallel_hessian, parallel_energy, use_pardiso)']);
+    promp = ' ----- Press enter to continue ----';
+    y = input(promp);
+    
+    fV  = UnifiedDistortionsOptimization(tmesh,fV,optParamList,options,movieOpt);
+    
+end

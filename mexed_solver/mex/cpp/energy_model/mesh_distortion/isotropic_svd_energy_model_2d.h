@@ -1,6 +1,6 @@
 // Copyright @2019. All rights reserved.
 // Authors: mike323zyf@gmail.com (Yufeng Zhu)
-
+// anaitsat@campus.technion.ac.il (Alexander Naitsat)
 #pragma once
 
 #include <memory>
@@ -12,6 +12,7 @@
 #include "energy_model/distortion_kernel/distortion_kernel_2d.h"
 
 #include "common/solver/eigen/eigen_solver.h"
+#include "data_io/data_io_utils.h"
 namespace mesh_distortion {
 
 class IsotropicSVDEnergyModel2D {
@@ -38,6 +39,11 @@ class IsotropicSVDEnergyModel2D {
   double ComputeEnergy(const std::vector<Eigen::Vector2d>& position);
   double ComputeEnergyInBlock(const std::vector<Eigen::Vector2d>& position,
 							  const std::vector<int>& element_block,
+							  const data_io::SolverSpecification& solverSpec,
+							  bool check_invalid_elements = false);
+
+  double ComputeEnergyInBlockParallel(const std::vector<Eigen::Vector2d>& position,
+							  const std::vector<int>& element_block,
 							  bool check_invalid_elements = false);
 
   void ComputeGradient(const std::vector<Eigen::Vector2d>& position,
@@ -45,8 +51,16 @@ class IsotropicSVDEnergyModel2D {
   void ComputeGradientInBlock(const std::vector<Eigen::Vector2d>& position,
 						Eigen::VectorXd* gradient,
 						const std::vector<int>& element_block,
-						const std::vector<int>& free_vertex_block
+						const std::vector<int>& free_vertex_block,
+						data_io::SolverSpecification& solverSpec
 						);
+
+  void ComputeGradientInBlockParallel(const std::vector<Eigen::Vector2d>& position,
+	  Eigen::VectorXd* gradient,
+	  const std::vector<int>& element_block,
+	  const std::vector<int>& free_vertex_block
+  );
+
   void ComputeHessian(const std::vector<Eigen::Vector2d>& position,
                       Eigen::SparseMatrix<double>* hessian);
   
@@ -62,6 +76,14 @@ class IsotropicSVDEnergyModel2D {
   void ComputeHessianNonzeroEntriesDirConstraintsInBlock(
 	  const std::vector<Eigen::Vector2d>& position,
 	  std::vector<Eigen::Triplet<double>>* entry_list,
+	  const std::vector<int>& element_block,
+	  data_io::SolverSpecification& solverSpec
+  );
+
+  void ComputeHessianNonzeroEntriesParallel( //parallel version 
+	  const std::vector<Eigen::Vector2d>& position,
+	  int num_threads,
+	  std::vector<std::vector<Eigen::Triplet<double>>>* entry_list,
 	  const std::vector<int>& element_block
   );
 
@@ -77,6 +99,7 @@ class IsotropicSVDEnergyModel2D {
   bool is_signed_svd=false;
   bool use_flip_barrier=true;				
   std::vector<bool> is_element_valid;
+  int invalid_element_num = 0;
   double ls_interval = 1.0,  
 		 ls_alpha = 0.2, 
 		 ls_beta = 0.8;
@@ -84,7 +107,6 @@ class IsotropicSVDEnergyModel2D {
   double prev_energy = 0; 
 
   bool return_search_dir = false;
-  bool use_pardiso_solver = false;
   bool is_flip_barrier = false;
   std::vector<bool> is_element_flip_barrier;
   std::vector<Eigen::Vector3i> mesh_;
@@ -103,9 +125,14 @@ class IsotropicSVDEnergyModel2D {
   }
 
   std::vector<double> volume_;
+  double total_volume;
   std::vector<Eigen::Matrix2d> inverse_material_space_;
 private:
   std::vector<Eigen::Matrix2d> ut_df_v;
+  std::vector<double> element_energy_; //PN optimized code 
+  std::vector<double> element_gradient_;
+  std::vector<Eigen::Matrix<double, 6, 6>> element_hessian_;
+
   std::vector<Eigen::Triplet<double>> constraints_entry_list;
   
   distortion_kernel::DistortionKernel2D* kernel_;

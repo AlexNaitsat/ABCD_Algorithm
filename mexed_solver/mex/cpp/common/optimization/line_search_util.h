@@ -27,7 +27,8 @@ double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
 								const Eigen::VectorXd& dfk,
 								double fk,
 								const std::vector<int>& element_block,
-								const std::vector<int>& free_vertex_block);
+								const std::vector<int>& free_vertex_block,
+								const data_io::SolverSpecification& solverSpec);
 
 
 double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& deformed,
@@ -37,7 +38,9 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 										const Eigen::VectorXd& dfk,
 										double fk,
 										const std::vector<int>& element_block,
-										const std::vector<int>& free_vertex_block);
+										const std::vector<int>& free_vertex_block,
+										const data_io::SolverSpecification& solverSpec
+										);
 
 
 Eigen::Vector3d compute_min_step_to_singularities(const std::vector<Eigen::Vector2d>& uv, 

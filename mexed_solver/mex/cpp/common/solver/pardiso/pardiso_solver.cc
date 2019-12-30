@@ -1,5 +1,6 @@
 // Copyright @2019. All rights reserved.
 // Authors: mike323zyf@gmail.com (Yufeng Zhu)
+// anaitsat@campus.ac.il (Alexander Naitsat)
 
 #include "stdafx.h"
 #include <omp.h>

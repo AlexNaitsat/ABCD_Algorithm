@@ -96,12 +96,15 @@ void IsotropicSVDEnergyModel2D::SetRestMesh( const Eigen::MatrixXd& position,
 
   element_distortion.resize(num_of_element);
   element_distortion.setZero();
-
+  element_hessian_.resize(num_of_element);
+  element_gradient_.resize(6 * num_of_element);
+  
   const Eigen::Vector2d kOO(0.0, 0.0);
   const Eigen::Vector2d kFO(1.0, 0.0);
   const Eigen::Vector2d kSO(0.0, 1.0);
   bool is_uv_mesh = (position.cols() == 3);
 
+  total_volume = 0;
   for (size_t i = 0; i < num_of_element; i++) {
     Eigen::Vector3i triangle = mesh[i];
 	
@@ -148,6 +151,7 @@ void IsotropicSVDEnergyModel2D::SetRestMesh( const Eigen::MatrixXd& position,
 			point[1] - point[0], point[2] - point[0]);
 		volume_[i] = ComputeTriangleVolume(material_space);
 	}
+	total_volume += volume_[i];
 
 
    
@@ -222,7 +226,13 @@ double IsotropicSVDEnergyModel2D::ComputeEnergy(
 double IsotropicSVDEnergyModel2D::ComputeEnergyInBlock(
 							const std::vector<Eigen::Vector2d>& position,
 							const std::vector<int>& element_block,
+						    const data_io::SolverSpecification& solverSpec,
 							bool record_invalid_elements) {
+
+	if (solverSpec.is_parallel_energy && solverSpec.non_empty_block_num == 1) {
+		return ComputeEnergyInBlockParallel(position, element_block, record_invalid_elements);
+	}
+
 	double energy = 0;
 	size_t num_of_element  = element_block.size();
 
@@ -261,8 +271,10 @@ double IsotropicSVDEnergyModel2D::ComputeEnergyInBlock(
 			}
 		}
 
-		if (record_invalid_elements)
+		if (record_invalid_elements) {
 			is_element_valid[i] = util::IsElementValid(svd_s_[i]);
+			invalid_element_num += ! (is_element_valid[i]);
+		}
 
 		Eigen::Vector2d kernel_energy = kernel_->ComputeKernelEnergy(svd_s_[i], is_element_valid[i]);
 
@@ -274,6 +286,69 @@ double IsotropicSVDEnergyModel2D::ComputeEnergyInBlock(
 		}
 		energy += volume_[i] * kernel_energy[0];
 		element_distortion[i] = kernel_energy[0];
+	}
+
+	prev_energy = energy;
+	return energy;
+}
+
+
+double IsotropicSVDEnergyModel2D::ComputeEnergyInBlockParallel(
+	const std::vector<Eigen::Vector2d>& position,
+	const std::vector<int>& element_block,
+	bool record_invalid_elements) {
+	double energy = 0;
+	size_t num_of_element = element_block.size();
+	bool has_invalid_element = false;
+	//for (auto i : element_block) {
+#pragma omp parallel for
+	for (int bi = 0; bi < num_of_element; bi++) {
+		int i = element_block[bi];
+		Eigen::Vector3i triangle = mesh_[i];
+
+		Eigen::Vector2d point[3] = {
+			position[triangle[0]], position[triangle[1]], position[triangle[2]] };
+
+		Eigen::Matrix2d world_space = util::GenerateMatrix2DFromColumnVectors(
+			point[1] - point[0], point[2] - point[0]);
+
+		Eigen::Matrix2d deformation_gradient =
+			world_space * inverse_material_space_[i];
+
+		if (is_signed_svd)
+			util::ComputeSignedSVDForMatrix2D(
+				deformation_gradient, &svd_u_[i], &svd_s_[i], &svd_v_[i]);
+		else
+			util::ComputeSVDForMatrix2D(
+				deformation_gradient, &svd_u_[i], &svd_s_[i], &svd_v_[i]);
+
+		if (record_invalid_elements) {
+			is_element_valid[i] = util::IsElementValid(svd_s_[i]);
+			//invalid_element_num += !(is_element_valid[i]);
+		}
+
+		Eigen::Vector2d kernel_energy = kernel_->ComputeKernelEnergy(svd_s_[i], is_element_valid[i]);
+
+		if (kernel_energy[1] > 0.5) {
+			has_invalid_element = true;
+			//energy = 1e12;
+			svd_s_[i] = Eigen::Vector2d(1.0, 1.0);
+			svd_u_[i] << 1, 0, 0, 1;
+			svd_v_[i] << 1, 0, 0, 1;
+		}
+		element_distortion[i] = kernel_energy[0];
+	}
+
+	if (has_invalid_element) {
+		energy = 1e12;
+		for (auto i : element_block)
+			invalid_element_num += !(is_element_valid[i]);
+	} else {
+		// parallel reduction
+		for (auto i : element_block) {
+			invalid_element_num += !(is_element_valid[i]);
+			energy += element_distortion[i] * volume_[i];
+		}
 	}
 
 	prev_energy = energy;
@@ -317,7 +392,16 @@ void IsotropicSVDEnergyModel2D::ComputeGradient(
 void IsotropicSVDEnergyModel2D::ComputeGradientInBlock(
 	const std::vector<Eigen::Vector2d>& position, Eigen::VectorXd* gradient,
 	const std::vector<int>& element_block,
-	const std::vector<int>& free_vertex_block) {
+	const std::vector<int>& free_vertex_block,
+	data_io::SolverSpecification& solverSpec) {
+
+	if (solverSpec.is_parallel_grad && solverSpec.non_empty_block_num==1) {
+		ComputeGradientInBlockParallel(position, gradient, element_block,
+							  free_vertex_block);
+		return;
+	}
+
+
 	size_t num_of_element = element_block.size();
 
 	for (auto vi : free_vertex_block) {
@@ -359,6 +443,59 @@ void IsotropicSVDEnergyModel2D::ComputeGradientInBlock(
 		(*gradient)[2 * triangle[0] + 0] -= (dpsi[0] + dpsi[2]);
 		(*gradient)[2 * triangle[0] + 1] -= (dpsi[1] + dpsi[3]);
 	}
+}
+
+
+
+void IsotropicSVDEnergyModel2D::ComputeGradientInBlockParallel(
+	const std::vector<Eigen::Vector2d>& position, Eigen::VectorXd* gradient,
+	const std::vector<int>& element_block,
+	const std::vector<int>& free_vertex_block) {
+	size_t num_of_element = element_block.size();
+	gradient->resize(2 * position.size());
+	gradient->setZero();
+
+	/*for (auto vi : free_vertex_block) {
+		(*gradient)[2 * vi] = 0;   (*gradient)[2 * vi + 1] = 0;
+	}*/
+
+	double dpsi[4];
+
+	//for (auto i : element_block) {
+#pragma omp parallel for
+	for (int bi=0; bi < num_of_element; bi++) {
+		int i = element_block[bi];
+		Eigen::Vector3i triangle = mesh_[i];
+
+		Eigen::Vector2d dpsi_ds = kernel_->ComputeKernelGradient(svd_s_[i]);
+
+		for (size_t j = 0; j < 4; j++) {
+			Eigen::Matrix2d product = svd_u_[i].transpose() *
+				deformation_gradient_differential_[4 * i + j] *
+				svd_v_[i];
+			ut_df_v[4 * i + j] = product;
+
+			dpsi[j] = volume_[i] *
+				(product(0, 0) * dpsi_ds[0] + product(1, 1) * dpsi_ds[1]);
+		}
+		element_gradient_[6 * i + 0] = dpsi[0];
+		element_gradient_[6 * i + 1] = dpsi[1];
+		element_gradient_[6 * i + 2] = dpsi[2];
+		element_gradient_[6 * i + 3] = dpsi[3];
+		element_gradient_[6 * i + 4] = -(dpsi[0] + dpsi[2]);
+		element_gradient_[6 * i + 5] = -(dpsi[1] + dpsi[3]);
+	}
+
+		// parallel reduction
+		for (size_t i = 0; i < num_of_element; i++) {
+			const Eigen::Vector3i& triangle = mesh_[i];
+			(*gradient)[2 * triangle[1] + 0] += element_gradient_[6 * i + 0];
+			(*gradient)[2 * triangle[1] + 1] += element_gradient_[6 * i + 1];
+			(*gradient)[2 * triangle[2] + 0] += element_gradient_[6 * i + 2];
+			(*gradient)[2 * triangle[2] + 1] += element_gradient_[6 * i + 3];
+			(*gradient)[2 * triangle[0] + 0] += element_gradient_[6 * i + 4];
+			(*gradient)[2 * triangle[0] + 1] += element_gradient_[6 * i + 5];
+		}
 }
 
 void IsotropicSVDEnergyModel2D::ComputeHessian(
@@ -460,8 +597,23 @@ void IsotropicSVDEnergyModel2D::ComputeHessianNonzeroEntriesDirConstraints(
 void IsotropicSVDEnergyModel2D::ComputeHessianNonzeroEntriesDirConstraintsInBlock(
 						const std::vector<Eigen::Vector2d>& position,
 						std::vector<Eigen::Triplet<double>>* entry_list,
-						const std::vector<int>& element_block)
+						const std::vector<int>& element_block,
+						data_io::SolverSpecification& solverSpec)
 {
+	static int hessian_threads_num = omp_get_max_threads();
+	if (solverSpec.is_parallel_hessian && solverSpec.non_empty_block_num == 1) {
+		std::vector<std::vector<Eigen::Triplet<double>>> block_entry_list;
+		ComputeHessianNonzeroEntriesParallel(position, hessian_threads_num, &block_entry_list,
+											 element_block);
+		for (size_t i = 0; i < hessian_threads_num; i++)
+		{
+			entry_list->insert(
+				entry_list->end(), block_entry_list[i].begin(), block_entry_list[i].end());
+		}
+		return;
+	}
+
+
 
 	for (auto ele: element_block) {
 		Eigen::Vector3i triangle = mesh_[ele];
@@ -494,6 +646,79 @@ void IsotropicSVDEnergyModel2D::ComputeHessianNonzeroEntriesDirConstraintsInBloc
 	}
 	if (entry_list->size() == 0) {
 		#pragma omp critical
+		{
+			std::cout << "Zero or Empty Hessian";
+			//mexErrMsgTxt("encounter Zero or Empty Hessian");
+		}
+	}
+
+}
+
+
+
+void IsotropicSVDEnergyModel2D::ComputeHessianNonzeroEntriesParallel(
+	const std::vector<Eigen::Vector2d>& position,
+	int num_threads,
+	std::vector<std::vector<Eigen::Triplet<double>>>* entry_list,
+	const std::vector<int>& element_block)
+{
+	
+	size_t num_of_element = element_block.size();
+	entry_list->resize(num_threads);
+	int sub_num_of_element = num_of_element / num_threads + 1;
+	int sub_capacity = 18 * num_of_element / num_threads + 1;//why 18, because only lower part of Hessian 6x6 block is computed ?
+#pragma omp parallel for
+	for (int ele_bi = 0; ele_bi < num_of_element; ele_bi++) {
+		size_t ele = element_block[ele_bi];
+		ComputeElementHessian(position, ele, &(element_hessian_[ele]));//need to be resized in SetRest Mesh.
+	}
+
+
+#pragma omp parallel for
+	for (int thread = 0; thread < num_threads; thread++) {
+		int ele_offset = thread * sub_num_of_element;
+		(*entry_list)[thread].reserve(sub_capacity);
+
+		for (size_t sub_id = 0; sub_id < sub_num_of_element; sub_id++) {
+			int ele_bi = ele_offset + sub_id; //elemnt index inside element_block
+			if (ele_bi >= num_of_element) {
+				break;
+			}
+			int ele =  element_block[ele_bi];//global element index
+
+			const Eigen::Vector3i& triangle = mesh_[ele];
+			const Eigen::Matrix<double, 6, 6>& element_hessian =
+				element_hessian_[ele];
+
+			for (size_t x = 0; x < 3; x++) {
+				for (size_t y = 0; y < 3; y++) {
+					if (triangle[x] > triangle[y]) {
+						continue;
+					}
+					int m = (x + 2) % 3;
+					int n = (y + 2) % 3;
+
+					for (size_t i = 0; i < 2; i++) {
+						for (size_t j = 0; j < 2; j++) {
+							if (2 * triangle[x] + i > 2 * triangle[y] + j) {
+								continue;
+							}
+							//global to block index mapping
+							int vert_x = blockFreeVertIndex[triangle[x]],
+								vert_y = blockFreeVertIndex[triangle[y]];
+							if (vert_x < 0 || vert_y < 0)
+								continue;
+							(*entry_list)[thread].emplace_back(2 * vert_x + i,
+								2 * vert_y + j,
+								element_hessian(2 * m + i, 2 * n + j));
+						}
+					}
+				}
+			}
+		}
+	}
+	if (entry_list->size() == 0) {
+#pragma omp critical
 		{
 			std::cout << "Zero or Empty Hessian";
 			//mexErrMsgTxt("encounter Zero or Empty Hessian");

@@ -1,6 +1,5 @@
 // Copyright @2019. All rights reserved.
-// Authors: mike323zyf@gmail.com (Yufeng Zhu)
-// anaitsat@campus.technion.ac.il  (Alexander Naitsat)
+// Authors:  anaitsat@campus.technion.ac.il  (Alexander Naitsat)
 #include "stdafx.h"
 					
 #include <iostream>
@@ -71,12 +70,12 @@ void mexFunction(int num_of_lhs,
 	FieldDataToArray<int>(struct_pnt, "energy_num", &solverSpec.energy_num, 1);
 	FieldDataToArray<int>(struct_pnt, "energy_num", &solverSpec.energy_num, 1);
 	FieldDataToArray<bool>(struct_pnt, "is_global",  &solverSpec.is_global,  1);
-
+	FieldDataToArray<bool>(struct_pnt, "use_pardiso", &solverSpec.use_pardiso_solver, 1);
 	FieldDataToArray<bool>(struct_pnt, "single_fixed_block", &solverSpec.single_fixed_block, 1);
 
 	FieldDataToArray<double>(struct_pnt, "invalid_penalty", invalid_penalty, 3);
 	FieldDataToArray<double>(struct_pnt, "invalid_penalty", invalid_penalty, 3);
-	FieldDataToArray<int>(struct_pnt, "max_block_iterations", &solverSpec.max_block_iterations, 1);
+	FieldDataToArray<double>(struct_pnt, "max_block_iterations", &solverSpec.max_block_iterations, 1);
 	FieldDataToArray<int>(struct_pnt, "max_global_iterations", &solverSpec.max_global_iterations, 1);
 	FieldDataToArray<bool>(struct_pnt, "is_signed_svd", &solverSpec.is_signed_svd, 1);
 	FieldDataToArray<bool>(struct_pnt, "is_parallel", &solverSpec.is_parallel, 1);
@@ -116,64 +115,8 @@ void mexFunction(int num_of_lhs,
 		deformed[i][0] = position_deformed[i + 0 * ver_num];
 		deformed[i][1] = position_deformed[i + 1 * ver_num];
 	}
-
-
 	
-#ifdef _LOAD_BLOCK_DATA
-	if (!(mxIsCell(pointer_of_rhs[6]) && mxIsCell(pointer_of_rhs[7]) &&
-		mxIsCell(pointer_of_rhs[8]))) {
-		mexErrMsgTxt("7h-9th input variable must be cell arrays");
-	}
-	element_blocks_pntr = pointer_of_rhs[6];
-	free_vertex_blocks_pntr = pointer_of_rhs[7];
-	bnd_vertex_blocks_pntr = pointer_of_rhs[8];
-	int block_num0 = std::max(mxGetM(element_blocks_pntr), mxGetN(element_blocks_pntr));
 
-	std::vector<std::vector<int>>  element_blocks0(block_num0), free_vertex_blocks0(block_num0),
-		bnd_vertex_blocks0(block_num0), blocks_by_color0(color_num);
-
-	for (size_t bi = 0; bi < block_num0; bi++) {
-		mxArray *elementBlockArray = mxGetCell(element_blocks_pntr, bi),
-			*freeBlockArray = mxGetCell(free_vertex_blocks_pntr, bi),
-			*bndBlockArray = mxGetCell(bnd_vertex_blocks_pntr, bi);
-
-		double  *elementBlock = mxGetPr(elementBlockArray),
-			*freeBlock = mxGetPr(freeBlockArray),
-			*bndBlock = mxGetPr(bndBlockArray);
-
-		int element_block_size = mxGetN(elementBlockArray),
-			free_block_size = mxGetN(freeBlockArray),
-			bnd_block_size = mxGetN(bndBlockArray);
-		element_blocks0[bi].assign(element_block_size, 0);
-
-		free_vertex_blocks0[bi].assign(free_block_size, 0);
-
-		bnd_vertex_blocks0[bi].assign(bnd_block_size, 0);
-
-		for (size_t j = 0; j < element_block_size; j++) {
-			element_blocks0[bi][j] = elementBlock[j];
-		}
-		for (size_t j = 0; j < free_block_size; j++)
-			free_vertex_blocks0[bi][j] = freeBlock[j];
-		for (size_t j = 0; j < bnd_block_size; j++)
-			bnd_vertex_blocks0[bi][j] = bndBlock[j];
-	}
-
-	if (num_of_rhs >= 10) {
-		blocks_by_color_ptr = pointer_of_rhs[9];
-		color_num = std::max(mxGetM(blocks_by_color_ptr), mxGetN(blocks_by_color_ptr));
-		blocks_by_color0.resize(color_num);
-		for (size_t ci = 0; ci < color_num; ci++) {
-			mxArray *colorBlockArr = mxGetCell(blocks_by_color_ptr, ci);
-			double  *colorBlock = mxGetPr(colorBlockArr);
-			int color_block_size = mxGetN(colorBlockArr);
-			blocks_by_color0[ci].resize(color_block_size, 0);
-			for (size_t j = 0; j < color_block_size; j++) {
-				blocks_by_color0[ci][j] = colorBlock[j];
-			}
-		}
-	}
-#endif 	
 	runtime_seconds[RunTime::InputUpload] = double(clock() - begin_input_upload) / CLOCKS_PER_SEC;
 	//std::cout << "\n-Input upload time="   << runtime_seconds[RunTime::InputUpload];
 
@@ -282,7 +225,6 @@ void mexFunction(int num_of_lhs,
 	FieldDataToArray<bool>(struct_pnt, "is_flip_barrier",&solverSpec.is_flip_barrier, 1);
 	FieldDataToArray<bool>(struct_pnt, "is_flip_barrier", &model.is_flip_barrier, 1);
 	FieldDataToArray<int>(struct_pnt, "ls_max_iter", &model.ls_max_iter, 1);
-	FieldDataToArray<bool>(struct_pnt, "use_pardiso", &model.use_pardiso_solver,1);
 	FieldDataToArray<double>(struct_pnt, "K_hat", &solverSpec.K_hat, 1);
 
 	FieldDataToArray<bool>(struct_pnt, "return_search_dir", &model.return_search_dir, 1);
@@ -344,7 +286,6 @@ void mexFunction(int num_of_lhs,
 		search_dirSpec.is_parallel = false;
 
 		model.return_search_dir = true;
-		std::cout << " \n Computing search direction:";
 		size_t serach_direction_beign = clock();
 		OptimizeABCD(search_dirSpec, model,
 			gradient, search_direction,
@@ -447,23 +388,20 @@ void mexFunction(int num_of_lhs,
 		for (auto s_sorted : color_indices_sorted){
 			blocks_by_color_sorted.push_back(blocks_by_color[s_sorted]);
 		}
-
+		solverSpec.non_empty_block_num = 0;
 		for (const auto& b : free_vertex_blocks) {
 			if (b.size() > 0){
-				non_empty_block_num++;
+				solverSpec.non_empty_block_num++;
 			}
 		}
-		solverSpec.is_distortion_data_updated = (non_empty_block_num == 1);
-		if (solverSpec.is_distortion_data_updated) {
-			//std::cout << "\n ++++++ single non empty block ++++++++++++++\n";
-		}
+		solverSpec.is_distortion_data_updated = (solverSpec.non_empty_block_num == 1);
 		
 		clock_t block_processing_end = clock();
 		runtime_seconds[RunTime::BlockProcessing] = double(block_processing_end - block_processing_begin) / CLOCKS_PER_SEC;
 		std::cout << "\n-Total block processing  time=" << runtime_seconds[RunTime::BlockProcessing];
 	}
 	model.return_search_dir = false;
-	std::cout << " \n Optimization:";
+
 	clock_t BCD_optimization_begin = clock();
 	OptimizeABCD(solverSpec, model,
 				 gradient, search_direction,
@@ -513,7 +451,7 @@ void mexFunction(int num_of_lhs,
 			model.return_search_dir = true;
 			(*updated) = *(original);
 			solverSpec.solver_num = 0;
-			std::cout << " \n Recompute distortions for statistics:";
+			//std::cout << " \n Recompute distortions for statistics:";
 			OptimizeABCD(solverSpec, model,
 				gradient, search_direction,
 				original, updated, updated_copy,
@@ -554,6 +492,5 @@ void mexFunction(int num_of_lhs,
 		}
 	}
 
-	//std::cout << "\n finished";
 	return;
 }

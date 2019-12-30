@@ -235,10 +235,11 @@ void PN_SearchDirectionInBlock(std::vector<Eigen::Vector2d>& original,
 	int ver_num = free_vertex_block.size();
 
 	model.ComputeHessianNonzeroEntriesDirConstraintsInBlock(original, &entry_list,
-		element_block);
-	if (!model.use_pardiso_solver) {
-		common::solver::eigen::EigenSolver  m_solver;
+		element_block, solverSpec);
+
+	if (!solverSpec.use_pardiso_solver) {
 		clock_t begin = clock();
+		common::solver::eigen::EigenSolver  m_solver;
 		m_solver.SetPattern(entry_list, 2 * ver_num);
 		m_solver.AnalyzePattern();
 		clock_t middle = clock();
@@ -261,12 +262,6 @@ void PN_SearchDirectionInBlock(std::vector<Eigen::Vector2d>& original,
 		m_solver_pardiso.Factorize();
 		m_solver_pardiso.SolveDirichletConstraints(-gradient, &search_direction, free_vertex_block, bnd_vertex_block);
 		clock_t end = clock();
-		std::cout << "\nTotal pardiso time=" << double(end - begin) / CLOCKS_PER_SEC
-			<< ",analyze-solve:" << double(end - middle) / CLOCKS_PER_SEC
-			<< " ,init:" << double(after_init - begin) / CLOCKS_PER_SEC
-			<< " ,SetPattern:" << double(after_set_pattern - after_init) / CLOCKS_PER_SEC
-			<< " ,AnalyzePattern:" << double(middle - after_set_pattern) / CLOCKS_PER_SEC
-			<< std::endl;
 	#endif 
 	}
 }
@@ -306,9 +301,10 @@ void UpdateSolutionInBlock(std::vector<Eigen::Vector2d>& original,
 			fk = model.prev_energy;
 			solverSpec.is_distortion_data_updated = false;
 		} else {
-				fk = model.ComputeEnergyInBlock(original, element_block, true);
+				fk = model.ComputeEnergyInBlock(original, element_block, solverSpec, true);
 				double grad_sq_norm = 0;
-				model.ComputeGradientInBlock(original, &gradient, element_block, free_vertex_block);
+				model.ComputeGradientInBlock(original, &gradient, element_block, 
+											free_vertex_block, solverSpec);
 				for (auto vi : free_vertex_block) {
 					double vi_gradient[] = { gradient[2 * vi] ,gradient[2 * vi + 1] };
 					grad_sq_norm += vi_gradient[0] * vi_gradient[0] + vi_gradient[1] * vi_gradient[1];
@@ -396,7 +392,7 @@ void UpdateSolutionInBlock(std::vector<Eigen::Vector2d>& original,
 		double reduced_energy =
 			common::optimization::ArmijoLineSearchEnhancedInBlock(
 				original, step_time * search_direction, model, updated,
-				gradient, fk, element_block, free_vertex_block);
+				gradient, fk, element_block, free_vertex_block,solverSpec);
 
 		if (reduced_energy > fk) {
 			for (auto vi : free_vertex_block) {
@@ -430,24 +426,26 @@ void OptimizeABCD(SolverSpecification& solverSpec,
 
 	std::map<int, bool>	thread_calls;
 
-	if (solverSpec.is_parallel && color_num) {
-		std::cout << " Running in parallel\n";
-	}
-	else {
-		std::cout << " Running sequentially";
-		if (color_num)
-		{
-			std::cout << " with block coloring order";
+	if (solverSpec.verbose) {
+		if (solverSpec.is_parallel && color_num) {
+			std::cout << "\n Running in parallel\n";
 		}
-		std::cout << std::endl;
+		else {
+			std::cout << "\n Running sequnetially";
+			if (color_num)
+			{
+				std::cout << " with block coloring order";
+			}
+			std::cout << std::endl;
+		}
 	}
 	for (int i = 0; i < max_iter_num; i++) {
-		std::cout << ((solverSpec.solver_num) ? "PN" : "GD") << " Iteration " << i; // << std::endl;
+		//std::cout << ((solverSpec.solver_num) ? "PN" : "GD") << " Iteration " << i; 
 
 		if (color_num) {
 			for (int ci = 0; ci < color_num; ci++) {
 				int parallel_block_num = blocks_by_color[ci].size();
-#pragma omp parallel for schedule(dynamic) if(solverSpec.is_parallel)
+#pragma omp parallel for  if(solverSpec.is_parallel)
 				for (int i = 0; i < parallel_block_num; i++) {
 					int bi = blocks_by_color[ci][i];
 					#pragma omp critical
@@ -479,9 +477,10 @@ void OptimizeABCD(SolverSpecification& solverSpec,
 		}
 
 	}
-	std::cout << "\nThreads used :";
-	for (auto ti : thread_calls){
-		std::cout << ti.first << " ,";
+	if (solverSpec.verbose) {
+		std::cout << "\nThreads used :";
+		for (auto ti : thread_calls) {
+			std::cout << ti.first << " ,";
+		}
 	}
-	std::cout << "\n";
 }

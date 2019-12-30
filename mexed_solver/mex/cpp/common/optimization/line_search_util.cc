@@ -61,7 +61,8 @@ double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
 							const Eigen::VectorXd& dfk,
 							double fk,
 							const std::vector<int>& element_block,
-							const std::vector<int>& free_vertex_block) {
+							const std::vector<int>& free_vertex_block,
+							const SolverSpecification& solverSpec) {
 	assert(output != nullptr);
 
 	double step_size = 1.0;
@@ -80,7 +81,7 @@ double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
 		}
 	}
 
-	double lhs = model.ComputeEnergyInBlock(*output, element_block);
+	double lhs = model.ComputeEnergyInBlock(*output, element_block,solverSpec);
 
 	double initial_energy = lhs;
 	double rhs = fk + model.ls_alpha * step_size * dot_product;
@@ -101,7 +102,7 @@ double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
 			}
 		}
 
-		lhs = model.ComputeEnergyInBlock(*output,element_block);
+		lhs = model.ComputeEnergyInBlock(*output,element_block,solverSpec);
 		rhs = fk + model.ls_alpha * step_size * dot_product;
 		ls_iter++;
 	}
@@ -117,7 +118,8 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 										const Eigen::VectorXd& dfk, 
 										double fk,
 										const std::vector<int>& element_block,
-										const std::vector<int>& free_vertex_block) 
+										const std::vector<int>& free_vertex_block,
+										const SolverSpecification& solverSpec) 
 {
 	assert(output != nullptr);
 
@@ -138,7 +140,7 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 		}
 	}
 
-	double lhs = model.ComputeEnergyInBlock(*output, element_block);
+	double lhs = model.ComputeEnergyInBlock(*output, element_block, solverSpec);
 
 	double initial_energy = lhs;
 	double best_step_size = 0, max_reduce_in_energy =0;
@@ -162,7 +164,7 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 			}
 		}
 
-		lhs = model.ComputeEnergyInBlock(*output, element_block);
+		lhs = model.ComputeEnergyInBlock(*output, element_block, solverSpec);
 		rhs = fk + model.ls_alpha * step_size * dot_product;
 		ls_iter++;
 		if (initial_energy - lhs > max_reduce_in_energy) {

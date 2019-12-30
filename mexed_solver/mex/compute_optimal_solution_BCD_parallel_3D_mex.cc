@@ -202,7 +202,7 @@ void mexFunction(int num_of_lhs,
 	FieldDataToArray<int>(struct_pnt, "solver_num", &solverSpec.solver_num, 1);
 	FieldDataToArray<int>(struct_pnt, "energy_num", &solverSpec.energy_num, 1);
 	FieldDataToArray<double>(struct_pnt, "invalid_penalty", invalid_penalty, 3);
-	FieldDataToArray<int>(struct_pnt, "max_block_iterations", &solverSpec.max_block_iterations, 1);
+	FieldDataToArray<double>(struct_pnt, "max_block_iterations", &solverSpec.max_block_iterations, 1);
 	FieldDataToArray<int>(struct_pnt, "max_global_iterations", &solverSpec.max_global_iterations, 1);
 	FieldDataToArray<bool>(struct_pnt, "is_signed_svd", &solverSpec.is_signed_svd, 1);
 	FieldDataToArray<bool>(struct_pnt, "is_parallel", &solverSpec.is_parallel, 1);

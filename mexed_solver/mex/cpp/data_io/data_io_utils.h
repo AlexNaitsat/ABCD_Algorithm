@@ -192,12 +192,19 @@ namespace data_io {
 	struct SolverSpecification {
 		int solver_num = 0;							   
 		int energy_num = 0;							   
-		int max_block_iterations = 1;				   
+		size_t non_empty_block_num = 0;
+		double max_block_iterations = 1;
+		std::vector<double> block_iteration_range = std::vector<double>(2,0);//[min_iter,max_iter, step]
 		int max_global_iterations = 100;               
+		int cycle_num = 4;
 		bool is_signed_svd = true;                     
-		bool is_parallel = false;
-		bool  single_fixed_block = false; 
-		bool  is_global = false;
+		bool is_parallel        = false, is_parallel_grad   = false,
+			 is_parallel_energy = false, is_parallel_hessian = false;
+
+		bool use_pardiso_solver = false;
+		bool single_fixed_block = false; 
+		bool is_global = false;
+		bool verbose = false;
 													   
 		bool is_flip_barrier = false;
 		double line_search_interval = 0.5;             
@@ -206,5 +213,11 @@ namespace data_io {
 		double K_hat = 1.0;                                    
 		bool   report_data = true; 
 		bool is_distortion_data_updated = false; 
+		double min_distortion =0;
+		std::vector <double> invalid_penalty;
+		void update_block_iteration() {
+				max_block_iterations = std::min(max_block_iterations + block_iteration_range[2],
+					block_iteration_range[1]);
+		}
 	};
 }
