@@ -1,5 +1,5 @@
 // Copyright @2019. All rights reserved.
-// Authors: anaitsat@campus.technion.ac.il (Alex Naitsat)
+// Authors: anaitsat@campus.technion.ac.il (Alexander Naitsat)
 
 #pragma once
 
@@ -12,6 +12,9 @@
 #include <Eigen/Sparse>
 #include <mex.h>
 #include <set>
+#include <queue> 
+
+
 #pragma once
 
 namespace data_io {
@@ -85,90 +88,6 @@ namespace data_io {
 		return true;
 	}
 
-	class DebugMex {
-	public:
-		bool ConditionByName(const std::string& var_name = "") {
-			bool is_output = true;
-			return is_output;
-		}
-
-		void Mat2Mfile(const Eigen::MatrixXd& M, const std::string& M_name);
-		void MatInt2Mfile(const Eigen::MatrixXi& M, const std::string& M_name);
-		void Mat2Mfile(const Eigen::VectorXd& V, const std::string& V_name = "",
-			const std::vector<int>& index = {});
-
-		void ColumnVec2Mat(const Eigen::VectorXd& V, const std::string& V_name = "",
-			const std::vector<int>& index = {}, int d = 2);
-
-		void MatInt2Mfile(const Eigen::VectorXi& V, const std::string& V_name = "");
-
-		void Mat2Mfile(const std::vector<Eigen::VectorXd>& V, const std::string& V_name);
-		void Mat2Mfile(const std::vector<Eigen::Vector2d>& V,
-			const std::string& V_name,
-			const std::vector<int>& index = {});
-		
-		void Mat2Mfile(const std::vector<Eigen::Vector2i>& V,
-			const std::string& V_name,
-			const std::vector<int>& index = {});
-
-		void MatList2Mfile(const std::vector<Eigen::VectorXi>& V, const std::string& V_name);
-		void MatList2Mfile(const std::vector<std::vector<int>>& V, const std::string& V_name);
-		void MatList2Mfile(const std::vector<std::set<int>>& V, const std::string& V_name);
-		std::vector<int> ColumnStackIndex(const std::vector<int>& index, int d = 2);
-
-		void MatList2Mfile(const std::vector<Eigen::Matrix2d>& V, const std::string& V_name);
-		void MatList2Mfile(const std::vector<Eigen::Matrix2d>& V, const std::string& V_name, const std::vector<int>& index);
-
-		template <typename  T>
-		void Vec2Mfile(const std::vector<T>& V, const std::string& M_name) {
-			m_file << "\n" << M_name << " = [";
-			m_file << V;
-			m_file << " ];" << std::endl;
-			PostOutput();
-		}
-
-		void SparseMat2Mfile(const std::vector<Eigen::Triplet<double>>& M, int dim,  const std::string& M_name);
-
-		void SetArraty2Mfile(const std::set<int>* V, int array_len, const std::string& M_name);
-		void SetArraty2Mfile(const std::vector<std::set<int>>& V, const std::string& M_name);
-
-		bool debug_step_mode;
-		std::ofstream m_file;
-		std::string m_file_name;
-
-		void SetMatfile(std::string& file_name) {
-			if (m_file.is_open()) Close();
-
-			m_file.open(file_name);
-			m_file_name = file_name;
-		}
-
-		DebugMex(const std::string file_name = "") {
-			if (!file_name.empty())
-				m_file.open(file_name);
-
-			m_file_name = file_name;
-			debug_step_mode = false;
-		};
-
-		~DebugMex() {
-			Close();
-		};
-
-		void Close() {
-			if (m_file.is_open())
-				m_file.close();
-
-			std::cout << "\nClosing " << m_file_name;
-		}
-
-	private:
-		void PostOutput() {
-			if (debug_step_mode && m_file.is_open())
-				m_file.flush();
-		}
-	};
-
 	template <typename T>
 	std::ostream& operator<<(std::ostream& os, const std::vector<T>& v)
 	{
@@ -195,14 +114,14 @@ namespace data_io {
 		size_t non_empty_block_num = 0;
 		double max_block_iterations = 1;
 		std::vector<double> block_iteration_range = std::vector<double>(2,0);//[min_iter,max_iter, step]
-		int max_global_iterations = 100;               
+		int max_global_iterations = 1;               
 		int cycle_num = 4;
 		bool is_signed_svd = true;                     
-		bool is_parallel        = false, is_parallel_grad   = false,
+		bool is_parallel =        false, is_parallel_grad = false,
 			 is_parallel_energy = false, is_parallel_hessian = false;
 
 		bool use_pardiso_solver = false;
-		bool single_fixed_block = false; 
+		bool single_fixed_block = true; 
 		bool is_global = false;
 		bool verbose = false;
 													   
@@ -210,10 +129,14 @@ namespace data_io {
 		double line_search_interval = 0.5;             
 		double constant_step_size  = 0;                
 		double zero_grad_eps = 1e-18;				   
-		double K_hat = 1.0;                                    
+		double  K_hat = 1.0; 
+		std::queue<double> K_hat_queue;
+		int K_hat_size = 0;
+
 		bool   report_data = true; 
 		bool is_distortion_data_updated = false; 
 		double min_distortion =0;
+		double energy_tolerance = 1e-3;
 		std::vector <double> invalid_penalty;
 		void update_block_iteration() {
 				max_block_iterations = std::min(max_block_iterations + block_iteration_range[2],

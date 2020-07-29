@@ -1,6 +1,6 @@
 // Copyright @2019. All rights reserved.
-// Authors: mike323zyf@gmail.com (Yufeng Zhu),
-//          anaitsat@campus.technion.ac.il (Alex Naitsat)
+// Authors: anaitsat@campus.technion.ac.il (Alexander Naitsat),
+//          mike323zyf@gmail.com (Yufeng Zhu)
 
 #include "stdafx.h"
 #include "energy_model/distortion_kernel/flip_penalty_kernel_2d.h"

@@ -12,6 +12,10 @@
 #include "energy_model/distortion_kernel/distortion_kernel_2d.h"
 
 #include "common/solver/eigen/eigen_solver.h"
+#ifdef _USE_PARDISO
+	#include "common/solver/pardiso/pardiso_solver.h"
+#endif
+
 #include "data_io/data_io_utils.h"
 namespace mesh_distortion {
 
@@ -19,12 +23,6 @@ class IsotropicSVDEnergyModel2D {
  public:
   void SetRestMesh( const Eigen::MatrixXd& position,
                     const std::vector<Eigen::Vector3i>& mesh);
-
-  void CopyRestMesh(const Eigen::MatrixXd& position,
-				    const std::vector<Eigen::Vector3i>& mesh,
-					const double* inverse_material_pntr,
-				    const double* deform_gradient_pntr,
-					const double* volumes_pntr );
 
   void SetDistortionKernel(distortion_kernel::DistortionKernel2D* kernel);
 
@@ -36,7 +34,6 @@ class IsotropicSVDEnergyModel2D {
 	  is_signed_svd = is_signed_svd_;
   }
 
-  double ComputeEnergy(const std::vector<Eigen::Vector2d>& position);
   double ComputeEnergyInBlock(const std::vector<Eigen::Vector2d>& position,
 							  const std::vector<int>& element_block,
 							  const data_io::SolverSpecification& solverSpec,
@@ -46,32 +43,12 @@ class IsotropicSVDEnergyModel2D {
 							  const std::vector<int>& element_block,
 							  bool check_invalid_elements = false);
 
-  void ComputeGradient(const std::vector<Eigen::Vector2d>& position,
-                       Eigen::VectorXd* gradient);
   void ComputeGradientInBlock(const std::vector<Eigen::Vector2d>& position,
 						Eigen::VectorXd* gradient,
 						const std::vector<int>& element_block,
 						const std::vector<int>& free_vertex_block,
 						data_io::SolverSpecification& solverSpec
 						);
-
-  void ComputeGradientInBlockParallel(const std::vector<Eigen::Vector2d>& position,
-	  Eigen::VectorXd* gradient,
-	  const std::vector<int>& element_block,
-	  const std::vector<int>& free_vertex_block
-  );
-
-  void ComputeHessian(const std::vector<Eigen::Vector2d>& position,
-                      Eigen::SparseMatrix<double>* hessian);
-  
-
-  void ComputeHessianNonzeroEntries(
-      const std::vector<Eigen::Vector2d>& position,
-      std::vector<Eigen::Triplet<double>>* entry_list);
-
-  void ComputeHessianNonzeroEntriesDirConstraints(
-	  const std::vector<Eigen::Vector2d>& position,
-	  std::vector<Eigen::Triplet<double>>* entry_list);
   
   void ComputeHessianNonzeroEntriesDirConstraintsInBlock(
 	  const std::vector<Eigen::Vector2d>& position,
@@ -105,10 +82,13 @@ class IsotropicSVDEnergyModel2D {
 		 ls_beta = 0.8;
   int ls_max_iter = 1000;
   double prev_energy = 0; 
+  double energy_difference = INFINITY;
 
   bool return_search_dir = false;
   bool is_flip_barrier = false;
   std::vector<bool> is_element_flip_barrier;
+  std::vector<bool> is_stationary_vertex;
+
   std::vector<Eigen::Vector3i> mesh_;
   std::vector<int> blockFreeVertIndex;
 
@@ -123,6 +103,12 @@ class IsotropicSVDEnergyModel2D {
   void SetDirichletConstraints(int vertex_num, int value) {
 	  blockFreeVertIndex.resize(vertex_num,value);
   }
+  common::solver::eigen::EigenSolver  global_eigen_solver;
+
+#ifdef _USE_PARDISO
+  common::solver::pardiso::PardisoSolver global_pardiso_solver;
+#endif 
+
 
   std::vector<double> volume_;
   double total_volume;
@@ -130,11 +116,9 @@ class IsotropicSVDEnergyModel2D {
 private:
   std::vector<Eigen::Matrix2d> ut_df_v;
   std::vector<double> element_energy_; //PN optimized code 
-  std::vector<double> element_gradient_;
-  std::vector<Eigen::Matrix<double, 6, 6>> element_hessian_;
-
-  std::vector<Eigen::Triplet<double>> constraints_entry_list;
   
+  std::vector<Eigen::Triplet<double>> constraints_entry_list;
+
   distortion_kernel::DistortionKernel2D* kernel_;
 
   bool enforce_spd_ = false;

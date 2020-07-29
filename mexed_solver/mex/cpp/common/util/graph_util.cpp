@@ -1,5 +1,5 @@
 // Copyright @2019. All rights reserved.
-// Authors: anaitsat@campus.technion.ac.il (Alex Naitsat)
+// Authors: anaitsat@campus.technion.ac.il (Alexander Naitsat)
 
 #include "stdafx.h"
 

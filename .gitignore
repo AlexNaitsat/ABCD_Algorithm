@@ -3,8 +3,15 @@
 *.bat
 *.gif
 reports/*.*
-Coder/codegen/lib
-# tbb, libigl and eigen 
-C++external/eigen/*
-C++external/libigl/*
-C++external/tbb/*
+#boost, libigl, eigen and pardiso 
+dependencies/eigen/*
+dependencies/libigl/*
+dependencies/boost/*
+
+mexed_solver/VS_mex/*
+mexed_solver/mex/*.lib
+mexed_solver/mex/*.dll
+mexed_solver/mex/*.exp
+mexed_solver/mex/*obj
+mexed_solver/mex/*pdb
+mexed_solver/mex/*.asv

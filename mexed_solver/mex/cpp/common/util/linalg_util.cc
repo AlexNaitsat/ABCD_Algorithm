@@ -1,7 +1,9 @@
 // Copyright @2019. All rights reserved.
 // Authors: mike323zyf@gmail.com (Yufeng Zhu)
+// anaitsat@campus.technion.ac.il  (Alexander Naitsat)
 
 #include "stdafx.h"
+#include <iostream>
 #include "common/util/linalg_util.h"
 
 #include <algorithm>
@@ -163,28 +165,6 @@ void ComputeSVDForMatrix3D(const Eigen::Matrix3d &mat,
 	{
 		(*s)[2] *= -1;
 	}
-}
-
-Eigen::Matrix2d ProjectToSPDCone(const Eigen::Matrix2d &mat,
-								 double project_threshold)
-{
-	Eigen::Matrix2d mat_spd = mat;
-	Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eig(mat_spd);
-
-	Eigen::Vector2d eig_s = eig.eigenvalues();
-	Eigen::Matrix2d eig_x = eig.eigenvectors();
-
-	for (size_t i = 0; i < 2; i++)
-	{
-		eig_s[i] = std::max(eig_s[i], project_threshold);
-	}
-
-	Eigen::DiagonalMatrix<double, 2> eig_d;
-	eig_d.diagonal() << eig_s[0], eig_s[1];
-
-	mat_spd = eig_x * eig_d * eig_x.transpose();
-
-	return mat_spd;
 }
 
 } // namespace util

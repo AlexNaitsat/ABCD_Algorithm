@@ -1,6 +1,6 @@
 // Copyright @2019. All rights reserved.
 // Authors: mike323zyf@gmail.com (Yufeng Zhu)
-// anaitsat@campus.ac.il (Alexander Naitsat)
+// anaitsat@campus.technion.ac.il  (Alexander Naitsat)
 
 #include "stdafx.h"
 #include <omp.h>
@@ -9,12 +9,18 @@
 #include <algorithm>
 #include <cassert>
 #include <iostream>
+#include <time.h>
 namespace common
 {
 namespace solver
 {
 namespace pardiso
 {
+#ifndef _OPENMP
+	int omp_get_max_threads() { return 4; }
+#endif 
+
+
 
 void PardisoSolver::Init(int mtype)
 {
@@ -41,7 +47,7 @@ void PardisoSolver::Init(int mtype)
     exit(1);
   }
   else
-    printf("[PARDISO]: License check was successful ... \n");
+    //printf("[PARDISO]: License check was successful ... \n");
 
   num_procs_ =  omp_get_max_threads();
 
@@ -52,33 +58,11 @@ void PardisoSolver::Init(int mtype)
 
   msglvl_ = 0;
   error_ = 0;
+
+  is_initialized = true;
 }
-
-void PardisoSolver::SetPattern(const std::vector<Eigen::Triplet<double>> &eigen_entry_list,
-							  int dim)
-{
-	std::vector<MatrixEntry> entry_list;
-	is_symmetric = (abs(mtype_) == 2);
-	if (is_symmetric) {
-		for (auto& eigen_entry : eigen_entry_list) {
-			size_t col = eigen_entry.col(), row = eigen_entry.row();
-			entry_list.emplace_back(MatrixEntry(row, col, eigen_entry.value()));
-		}
-	} else {
-	entry_list.reserve(2*eigen_entry_list.size());
-		for (auto& eigen_entry : eigen_entry_list) {
-			size_t col = eigen_entry.col(), row = eigen_entry.row();
-			entry_list.emplace_back(MatrixEntry(col, row, eigen_entry.value()) );
-			if (row!=col )
-				entry_list.emplace_back(MatrixEntry(row,col, eigen_entry.value()));
-		}
-	}
-
-	SetPattern(entry_list,  dim);
-}
-
-void PardisoSolver::SetPatter4EigenUpper(std::vector<Eigen::Triplet<double>> &entry_eigen,
-	int dim)
+void PardisoSolver::SetPattern(const std::vector<Eigen::Triplet<double>> &entry_eigen,
+		int dim)
 {
 	ia_.clear();
 	ja_.clear();
@@ -92,108 +76,66 @@ void PardisoSolver::SetPatter4EigenUpper(std::vector<Eigen::Triplet<double>> &en
 	}
 
 	num_rows_ = dim;
-	#ifdef _CHECK_EIGEN_PRECISISON
-		hessian_entry_list = entry_eigen;//copy to compare later solution precision  
-	#endif
+	entires_indices.clear();
+	entires_indices.reserve(entry_eigen.size());
+	for (auto It = entry_eigen.begin(); It != entry_eigen.end(); It++) {
+		entires_indices.push_back(std::make_pair(*It, It - entry_eigen.begin()));
+	}
 
-	std::sort(entry_eigen.begin(), entry_eigen.end(), [](Eigen::Triplet<double> a, Eigen::Triplet<double> b) {
-		return a.row() == b.row() ? a.col() < b.col() : a.row() < b.row();
+	std::sort(entires_indices.begin(), entires_indices.end(), [](std::pair<Eigen::Triplet<double>, int> a,
+		std::pair<Eigen::Triplet<double>, int> b) {
+		return a.first.row() == b.first.row() ? a.first.col() < b.first.col() : a.first.row() < b.first.row();
 	});
 
 	int nnz = 1;
 	int pivot = -1;
-
-	for (auto It = entry_eigen.begin(); It != entry_eigen.end(); It++) {
-		double summed_value = It->value();
-		while ((It + 1) != entry_eigen.end() && (It + 1)->col() == It->col() && (It + 1)->row() == It->row()) {
-			summed_value += (It + 1)->value();
+	entry2a_.clear();
+	same_entries.clear();
+	int It_i = 0;
+	for (auto It = entires_indices.begin(); It != entires_indices.end(); It++) {
+		double summed_value = It->first.value();
+		entry2a_.push_back(a_.size());
+		same_entries.push_back(1);
+		while ((It + 1) != entires_indices.end() && 
+			    (It + 1)->first.col() == It->first.col() && 
+			    (It + 1)->first.row() == It->first.row()) 
+		{
+			summed_value += (It + 1)->first.value();
 			It++;
+			same_entries.back()++;
 		}
-		ja_.push_back(It->col() + 1);
-		a_.push_back(summed_value);
-		if (It->row() != pivot)
+		ja_.push_back(It->first.col() + 1);
+		a_.push_back(summed_value); 
+		if (It->first.row() != pivot)
 		{
 			ia_.push_back(nnz);
-			pivot = It->row();
+			pivot = It->first.row();
 		}
 		nnz++;
 	}
+
 	ia_.push_back(nnz);
 }
 
-
-
-void PardisoSolver::SetPattern(const std::vector<MatrixEntry> &entry_list,
-                               int dim)
+void PardisoSolver::UpdateMatrixEntryValue( const std::vector<EigenEntry> &entry_list)
 {
-  ia_.clear();
-  ja_.clear();
-  a_.clear();
-  coo_to_csr_map_.clear();
-
-  if (mtype_ == -1)
-  {
-    printf("Pardiso mtype not set.");
-    exit(1);
-  }
-
-  num_rows_ = dim;
-
-  std::vector<MatrixEntry> entry = entry_list;
-  std::sort(entry.begin(), entry.end(), [](MatrixEntry a, MatrixEntry b) {
-    return a.row == b.row ? a.col < b.col : a.row < b.row;
-  });
-
-  int nnz = 1;
-  int pivot = -1;
-
-  std::vector<MatrixEntry> entry_unique;
-  entry_unique.clear();
-
-  for (auto It = entry.begin(); It != entry.end(); It++) {
-	  double summed_value = It->val;
-	  while ((It+1) != entry.end() && (It+1)->col == It->col  && (It+1)->row == It->row) {
-		  summed_value += (It+1)->val;
-		  It++;
-      }
-	  entry_unique.emplace_back(MatrixEntry(It->row, It->col, summed_value));
-  }
-  entry = entry_unique;
-
-
-  for (const auto &item : entry)
-  {
-    ja_.push_back(item.col + 1);
-    a_.push_back(item.val);
-	coo_to_csr_map_[std::to_string(item.row) + "#" + std::to_string(item.col)] =
-        a_.size() - 1;
-    if (item.row != pivot)
-    {
-      ia_.push_back(nnz);
-      pivot = item.row;
-    }
-    nnz++;
-  }
-
-  ia_.push_back(nnz);
-}
-
-void PardisoSolver::UpdateMatrixEntryValue(
-    const std::vector<MatrixEntry> &entry_list)
-{
-  assert(entry_list.size() == a_.size());
-
-  for (const auto &entry : entry_list)
-  {
-    const auto &item = coo_to_csr_map_.find(std::to_string(entry.row) + "#" +
-                                            std::to_string(entry.col));
-    assert(item != coo_to_csr_map_.end());
-    a_[item->second] = entry.val;
-  }
+	int entry_i = 0;
+	a_.assign(a_.size(), 0);
+	int repetition_num = same_entries[entry_i];
+	//for (const auto& entry : entry_list) {
+	for (const auto& entry_index : entires_indices) {
+		if (!repetition_num) {
+			entry_i++;
+			repetition_num = same_entries[entry_i];
+		}
+		a_[entry2a_[entry_i]] += entry_list[entry_index.second].value();
+		repetition_num--;
+	}
 }
 
 void PardisoSolver::AnalyzePattern()
 {
+	//std::cout << "\n Pardiso AnalyzePattern";
   if (mtype_ == -1)
   {
     printf("Pardiso mtype not set.");
@@ -225,10 +167,12 @@ void PardisoSolver::AnalyzePattern()
     printf("\nERROR during symbolic factorization: %d", error_);
     exit(1);
   }
+  is_pattern_analyzed = true;
 }
 
 bool PardisoSolver::Factorize()
 {
+  //std::cout << "\n Pardiso Factorize";
   if (mtype_ == -1)
   {
     printf("Pardiso mtype not set.");
@@ -308,11 +252,11 @@ void PardisoSolver::Solve(const std::vector<double> &input,
 }
 
 void PardisoSolver::SolveDirichletConstraints(const Eigen::VectorXd& rhs,
-										Eigen::VectorXd* lhs,
-										const std::vector<int>& free_vertices,
-										const std::vector<int>& fixed_vertices) {
+											Eigen::VectorXd* lhs,
+											const std::vector<int>& free_vertices,
+											const std::vector<int>& fixed_vertices,
+											int d) {
 	assert(lhs != nullptr);
-	const int d = 2;
 	size_t len = rhs.size();
 	size_t free_ver_num = free_vertices.size();
 
@@ -335,27 +279,6 @@ void PardisoSolver::SolveDirichletConstraints(const Eigen::VectorXd& rhs,
 	for (auto v : fixed_vertices)
 		for (int k = 0; k < d; k++)
 			(*lhs)[d*v + k] = 0;
-
-#ifdef _CHECK_EIGEN_PRECISISON
-	int dim_ = num_rows_;
-	Eigen::MatrixXd A(dim_, dim_);
-	A.setZero();
-	for (auto h_entry : hessian_entry_list) {
-		A(h_entry.row(), h_entry.col()) += h_entry.value();
-		if (h_entry.col() != h_entry.row())
-			A(h_entry.col(), h_entry.row()) += h_entry.value();
-
-	}
-
-	Eigen::VectorXd  lhs_free_eigen( lhs_free.size()), 	rhs_free_eigen( rhs_free.size());
-	for (int i = 0; i < lhs_free_eigen.size(); i++) {
-			lhs_free_eigen[i] = lhs_free[i];
-			rhs_free_eigen[i] = rhs_free[i];
-	}
-
-	double two_norm_diff = (A* lhs_free_eigen - rhs_free_eigen).norm();
-	std::cout << "\n Precision of the solution=" << two_norm_diff << std::endl;
-#endif 
 
 }
 

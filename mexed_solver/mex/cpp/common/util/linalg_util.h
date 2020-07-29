@@ -40,6 +40,11 @@ void ComputeSVDForMatrix2D(const Eigen::Matrix2d& mat,
 inline bool IsElementValid(const Eigen::Vector2d& s) {
 	return (s[1] >  1e-12 && s[0] >  1e-12);
 }
+
+inline bool IsElementValid(const Eigen::Vector3d& s) {
+	return (s[2] >  1e-12 && s[1] >  1e-12 && s[0] >  1e-12);
+}
+
 	
 void ComputeSignedSVDForMatrix3D(const Eigen::Matrix3d &mat,
                                  Eigen::Matrix3d *u,
@@ -50,8 +55,5 @@ void ComputeSVDForMatrix3D(const Eigen::Matrix3d &mat,
 								 Eigen::Matrix3d *u,
 								 Eigen::Vector3d *s,
 								 Eigen::Matrix3d *v);
-
-Eigen::Matrix2d ProjectToSPDCone(const Eigen::Matrix2d& mat,
-                                 double project_threshold = 0.0);
 
 }  // namespace util

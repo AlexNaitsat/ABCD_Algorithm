@@ -1,5 +1,6 @@
 // Copyright @2019. All rights reserved.
 // Authors: mike323zyf@gmail.com (Yufeng Zhu)
+// anaitsat@campus.technion.ac.il  (Alexander Naitsat)
 
 #include "stdafx.h"
 #include "common/solver/eigen/eigen_solver.h"
@@ -21,39 +22,10 @@ void EigenSolver::SetPattern(const std::vector<EigenEntry>& entry_list,
   UpdateMatrixEntryValue(entry_list);
 
   dim_ = dim;
-#ifdef _CHECK_EIGEN_PRECISISON
-  hessian_entry_list = entry_list;
-#endif
-#ifdef _CHECK_PSD
-  Eigen::MatrixXd A(dim_, dim_);
-  A.setZero();
- 
-  for (auto h_entry : entry_list) {
-	  A(h_entry.row(), h_entry.col()) += h_entry.value();
-	  if (h_entry.col() != h_entry.row())
-			A(h_entry.col(), h_entry.row()) += h_entry.value();
-  }
-  Eigen::LLT<Eigen::MatrixXd> lltOfA(A);
-  if (lltOfA.info() == Eigen::NumericalIssue)
-  {
-	  Eigen::VectorXcd Hessian_eigens_complex = A.eigenvalues();
-	  Eigen::VectorXd Hessian_eigens(Hessian_eigens_complex.rows());
-	  std::cout << "\nNegative eigenvalues of the Hessian are:\n";
-	  int num_of_negativ_eigens = 0;
-	  const double eig_EPS = 1e-12;
-	  for (int r = 0; r < Hessian_eigens.rows(); r++) {
-		  Hessian_eigens(r) = Hessian_eigens_complex(r).real();
-		  if (Hessian_eigens(r) < 0 && abs(Hessian_eigens(r)) > eig_EPS) {
-			  std::cout << Hessian_eigens(r) << std::endl;
-			  num_of_negativ_eigens++;
-		  }
-	  }
-  }
-#endif  
 }
 
 void EigenSolver::UpdateMatrixEntryValue(
-    const std::vector<EigenEntry>& entry_list) {
+   const std::vector<EigenEntry>& entry_list) {
   system_.setFromTriplets(entry_list.begin(), entry_list.end());
 }
 
@@ -61,6 +33,7 @@ void EigenSolver::AnalyzePattern() {
   system_.makeCompressed();
 
   system_solver_.analyzePattern(system_);
+  is_pattern_analyzed = true;
 }
 
 bool EigenSolver::Factorize() {
@@ -77,9 +50,10 @@ void EigenSolver::Solve(const Eigen::VectorXd& rhs, Eigen::VectorXd* lhs) {
 void EigenSolver::SolveDirichletConstraints(const Eigen::VectorXd& rhs,
 								Eigen::VectorXd* lhs,
 								const std::vector<int>& free_vertices,
-								const std::vector<int>& fixed_vertices) {
+								const std::vector<int>& fixed_vertices,
+								int d ) {
 	assert(lhs != nullptr);
-	const int d = 2;
+	//const int d = 2;
 	size_t len = rhs.size();
 	size_t free_ver_num = free_vertices.size();
 
@@ -102,19 +76,6 @@ void EigenSolver::SolveDirichletConstraints(const Eigen::VectorXd& rhs,
 	for (auto v : fixed_vertices)
 		for (int k = 0; k < d; k++)
 			(*lhs)[d*v + k] = 0;
-	
-	#ifdef _CHECK_EIGEN_PRECISISON
-		Eigen::MatrixXd A(dim_, dim_);
-		A.setZero();
-		for (auto h_entry : hessian_entry_list) {
-			A(h_entry.row(), h_entry.col()) += h_entry.value();
-			if (h_entry.col() != h_entry.row())
-				A(h_entry.col(), h_entry.row()) += h_entry.value();
-			
-		}
-		double two_norm_diff = (A*lhs_free - rhs_free).norm();
-		std::cout << "\n Precision of the solution=" << two_norm_diff << std::endl;
-	#endif 
 }
 
 }  // namespace eigen

@@ -1,5 +1,6 @@
-// Copyright @2019. All rights reserved.
-// Authors: mike323zyf@gmail.com (Yufeng Zhu)
+// Copyright @2020. All rights reserved.
+// Authors:  anaitsat@campus.technion.ac.il (Alexander Naitsat) 
+//			 mike323zyf@gmail.com (Yufeng Zhu)
 
 #include "stdafx.h"
 #include "energy_model/mesh_distortion/isotropic_svd_energy_model_3d.h"
@@ -13,6 +14,7 @@
 
 #include "common/util/linalg_util.h"
 #include "data_io/data_io_utils.h"
+#include <time.h>
 namespace mesh_distortion
 {
 
@@ -35,6 +37,7 @@ void IsotropicSVDEnergyModel3D::SetRestMesh(
   size_t num_of_element = mesh.size();
   mesh_ = mesh;
   volume_.resize(num_of_element);
+  is_element_valid.resize(num_of_element, true);
   inverse_material_space_.resize(num_of_element);
   deformation_gradient_differential_.resize(9 * num_of_element);
   ut_df_v.resize(9 * num_of_element);
@@ -45,11 +48,14 @@ void IsotropicSVDEnergyModel3D::SetRestMesh(
   element_distortion.resize(num_of_element);
   element_distortion.setZero();
 
+  element_energy_.resize(num_of_element);
+  
   const Eigen::Vector3d kOO(0.0, 0.0, 0.0);
   const Eigen::Vector3d kFO(1.0, 0.0, 0.0);
   const Eigen::Vector3d kSO(0.0, 1.0, 0.0);
   const Eigen::Vector3d kTO(0.0, 0.0, 1.0);
 
+  total_volume = 0;
   for (size_t i = 0; i < num_of_element; i++)
   {
     Eigen::Vector4i tetrahedron = mesh[i];
@@ -65,6 +71,7 @@ void IsotropicSVDEnergyModel3D::SetRestMesh(
         point[1] - point[0], point[2] - point[0], point[3] - point[0]);
 
     volume_[i] = ComputeTetrahedraVolume(material_space);
+	total_volume += volume_[i];
     inverse_material_space_[i] = material_space.inverse();
 
     deformation_gradient_differential_[9 * i + 0] =
@@ -95,6 +102,8 @@ void IsotropicSVDEnergyModel3D::SetRestMesh(
         util::GenerateMatrix3DFromRowVectors(kOO, kOO, kTO) *
         inverse_material_space_[i];
   }
+  size_t vertex_num = position.rows();
+  is_stationary_vertex.resize(vertex_num, false);
 }
 
 void IsotropicSVDEnergyModel3D::SetDistortionKernel(
@@ -103,52 +112,23 @@ void IsotropicSVDEnergyModel3D::SetDistortionKernel(
   kernel_ = kernel;
 }
 
-double IsotropicSVDEnergyModel3D::ComputeEnergy(
-    const std::vector<Eigen::Vector3d> &position)
-{
-  double energy = 0;
-  size_t num_of_element = mesh_.size();
-
-  for (size_t i = 0; i < num_of_element; i++)
-  {
-    Eigen::Vector4i tetrahedron = mesh_[i];
-
-    Eigen::Vector3d point[4] = {position[tetrahedron[0]],
-                                position[tetrahedron[1]],
-                                position[tetrahedron[2]],
-                                position[tetrahedron[3]]};
-
-    Eigen::Matrix3d world_space = util::GenerateMatrix3DFromColumnVectors(
-        point[1] - point[0], point[2] - point[0], point[3] - point[0]);
-
-    Eigen::Matrix3d deformation_gradient =
-        world_space * inverse_material_space_[i];
-
-    util::ComputeSignedSVDForMatrix3D(
-        deformation_gradient, &svd_u_[i], &svd_s_[i], &svd_v_[i]);
-
-    Eigen::Vector2d kernel_energy = kernel_->ComputeKernelEnergy(svd_s_[i]);
-
-    if (kernel_energy[1] > 0.5)
-    {
-      energy = 1e12;
-      break;
-    }
-    energy += volume_[i] * kernel_energy[0];
-  }
-
-  return energy;
-}
-
 double IsotropicSVDEnergyModel3D::ComputeEnergyInBlock(
-    const std::vector<Eigen::Vector3d> &position,
-    const std::vector<int> &element_block)
+						const std::vector<Eigen::Vector3d> &position,
+						const std::vector<int> &element_block,
+						const data_io::SolverSpecification& solverSpec,
+						bool record_invalid_elements)
 {
   double energy = 0;
   size_t num_of_element = element_block.size();
+  bool has_invalid_element = false;
+  clock_t energy_begin;
 
-  for (auto i : element_block)
+  bool is_parallel_energy_computation = (solverSpec.is_parallel_energy && solverSpec.non_empty_block_num == 1);
+
+#pragma omp parallel for if(is_parallel_energy_computation)
+  for (int bi = 0; bi < num_of_element; bi++) 
   {
+	int i = element_block[bi];
     Eigen::Vector4i tetrahedron = mesh_[i];
 
     Eigen::Vector3d point[4] = {position[tetrahedron[0]],
@@ -169,173 +149,97 @@ double IsotropicSVDEnergyModel3D::ComputeEnergyInBlock(
       util::ComputeSVDForMatrix3D(
           deformation_gradient, &svd_u_[i], &svd_s_[i], &svd_v_[i]);
 
-    Eigen::Vector2d kernel_energy = kernel_->ComputeKernelEnergy(svd_s_[i]);
+	if (record_invalid_elements) {
+		is_element_valid[i] = util::IsElementValid(svd_s_[i]);
+		invalid_element_num += !(is_element_valid[i]);
+	}
+
+	Eigen::Vector2d kernel_energy = kernel_->ComputeKernelEnergy(svd_s_[i], is_element_valid[i]);
 
     if (kernel_energy[1] > 0.5)
     {
-      energy = 1e12;
-      break;
+	  has_invalid_element = true;
+
+	  svd_s_[i] = Eigen::Vector3d(1.0, 1.0, 1.0);
+	  svd_u_[i] << 1, 0, 0,  0, 1, 0,  0, 0, 1;
+	  svd_v_[i] << 1, 0, 0,  0, 1, 0,  0, 0, 1;
     }
-    energy += volume_[i] * kernel_energy[0];
     element_distortion[i] = kernel_energy[0];
   }
+
+  if (has_invalid_element) {
+	  energy = 1e12;
+	  for (auto i : element_block)
+		  invalid_element_num += !(is_element_valid[i]);
+  }
+  else {
+	  // parallel reduction
+	  for (auto i : element_block) {
+		  invalid_element_num += !(is_element_valid[i]);
+		  energy += element_distortion[i] * volume_[i];
+	  }
+  }
+
+  energy_difference = energy - prev_energy;
+  prev_energy = energy;
 
   return energy;
 }
 
-void IsotropicSVDEnergyModel3D::ComputeGradient(
-    const std::vector<Eigen::Vector3d> &position, Eigen::VectorXd *gradient)
-{
-  size_t num_of_element = mesh_.size();
-
-  gradient->resize(3 * position.size());
-  gradient->setZero();
-
-  double dpsi[9];
-
-  for (size_t i = 0; i < num_of_element; i++)
-  {
-    Eigen::Vector4i tetrahedron = mesh_[i];
-
-    Eigen::Vector3d dpsi_ds = kernel_->ComputeKernelGradient(svd_s_[i]);
-
-    for (size_t j = 0; j < 9; j++)
-    {
-      Eigen::Matrix3d product = svd_u_[i].transpose() *
-                                deformation_gradient_differential_[9 * i + j] *
-                                svd_v_[i];
-      ut_df_v[9 * i + j] = product;
-
-      dpsi[j] = volume_[i] *
-                (product(0, 0) * dpsi_ds[0] + product(1, 1) * dpsi_ds[1] +
-                 product(2, 2) * dpsi_ds[2]);
-    }
-
-    (*gradient)[3 * tetrahedron[1] + 0] += dpsi[0];
-    (*gradient)[3 * tetrahedron[1] + 1] += dpsi[1];
-    (*gradient)[3 * tetrahedron[1] + 2] += dpsi[2];
-
-    (*gradient)[3 * tetrahedron[2] + 0] += dpsi[3];
-    (*gradient)[3 * tetrahedron[2] + 1] += dpsi[4];
-    (*gradient)[3 * tetrahedron[2] + 2] += dpsi[5];
-
-    (*gradient)[3 * tetrahedron[3] + 0] += dpsi[6];
-    (*gradient)[3 * tetrahedron[3] + 1] += dpsi[7];
-    (*gradient)[3 * tetrahedron[3] + 2] += dpsi[8];
-
-    (*gradient)[3 * tetrahedron[0] + 0] -= (dpsi[0] + dpsi[3] + dpsi[6]);
-    (*gradient)[3 * tetrahedron[0] + 1] -= (dpsi[1] + dpsi[4] + dpsi[7]);
-    (*gradient)[3 * tetrahedron[0] + 2] -= (dpsi[2] + dpsi[5] + dpsi[8]);
-  }
-}
-
 void IsotropicSVDEnergyModel3D::ComputeGradientInBlock(
-    const std::vector<Eigen::Vector3d> &position, Eigen::VectorXd *gradient,
-    const std::vector<int> &element_block,
-    const std::vector<int> &free_vertex_block)
+	const std::vector<Eigen::Vector3d> &position, Eigen::VectorXd *gradient,
+	const std::vector<int> &element_block,
+	const std::vector<int> &free_vertex_block,
+	data_io::SolverSpecification& solverSpec
+)
 {
-  size_t num_of_element = element_block.size();
 
-  for (auto vi : free_vertex_block)
-  {
-    (*gradient)[3 * vi] = 0;
-    (*gradient)[3 * vi + 1] = 0;
-    (*gradient)[3 * vi + 2] = 0;
-  }
-  double dpsi[9];
+	clock_t gradient_begin;
+	size_t num_of_element = element_block.size();
 
-  for (auto i : element_block)
-  {
-    Eigen::Vector4i tetrahedron = mesh_[i];
+	for (auto vi : free_vertex_block)
+	{
+		(*gradient)[3 * vi] = 0;
+		(*gradient)[3 * vi + 1] = 0;
+		(*gradient)[3 * vi + 2] = 0;
+	}
+	double dpsi[9];
 
-    Eigen::Vector3d dpsi_ds = kernel_->ComputeKernelGradient(svd_s_[i]);
 
-    for (size_t j = 0; j < 9; j++)
-    {
-      Eigen::Matrix3d product = svd_u_[i].transpose() *
-                                deformation_gradient_differential_[9 * i + j] *
-                                svd_v_[i];
-      ut_df_v[9 * i + j] = product;
+	for (auto i : element_block) 
+	{
+		Eigen::Vector4i tetrahedron = mesh_[i];
 
-      dpsi[j] = volume_[i] *
-                (product(0, 0) * dpsi_ds[0] + product(1, 1) * dpsi_ds[1] +
-                 product(2, 2) * dpsi_ds[2]);
-    }
+		Eigen::Vector3d dpsi_ds = kernel_->ComputeKernelGradient(svd_s_[i]);
 
-    (*gradient)[3 * tetrahedron[1] + 0] += dpsi[0];
-    (*gradient)[3 * tetrahedron[1] + 1] += dpsi[1];
-    (*gradient)[3 * tetrahedron[1] + 2] += dpsi[2];
+		for (size_t j = 0; j < 9; j++)
+		{
+			Eigen::Matrix3d product = svd_u_[i].transpose() *
+            				deformation_gradient_differential_[9 * i + j] *
+            				svd_v_[i];
+			ut_df_v[9 * i + j] = product;
 
-    (*gradient)[3 * tetrahedron[2] + 0] += dpsi[3];
-    (*gradient)[3 * tetrahedron[2] + 1] += dpsi[4];
-    (*gradient)[3 * tetrahedron[2] + 2] += dpsi[5];
+			dpsi[j] = volume_[i] *
+				(product(0, 0) * dpsi_ds[0] + product(1, 1) * dpsi_ds[1] +
+					product(2, 2) * dpsi_ds[2]);
+		}
 
-    (*gradient)[3 * tetrahedron[3] + 0] += dpsi[6];
-    (*gradient)[3 * tetrahedron[3] + 1] += dpsi[7];
-    (*gradient)[3 * tetrahedron[3] + 2] += dpsi[8];
+		(*gradient)[3 * tetrahedron[1] + 0] += dpsi[0];
+		(*gradient)[3 * tetrahedron[1] + 1] += dpsi[1];
+		(*gradient)[3 * tetrahedron[1] + 2] += dpsi[2];
 
-    (*gradient)[3 * tetrahedron[0] + 0] -= (dpsi[0] + dpsi[3] + dpsi[6]);
-    (*gradient)[3 * tetrahedron[0] + 1] -= (dpsi[1] + dpsi[4] + dpsi[7]);
-    (*gradient)[3 * tetrahedron[0] + 2] -= (dpsi[2] + dpsi[5] + dpsi[8]);
-  }
-}
+		(*gradient)[3 * tetrahedron[2] + 0] += dpsi[3];
+		(*gradient)[3 * tetrahedron[2] + 1] += dpsi[4];
+		(*gradient)[3 * tetrahedron[2] + 2] += dpsi[5];
 
-void IsotropicSVDEnergyModel3D::ComputeHessian(
-    const std::vector<Eigen::Vector3d> &position,
-    Eigen::SparseMatrix<double> *hessian)
-{
-  size_t num_of_vertex = position.size();
+		(*gradient)[3 * tetrahedron[3] + 0] += dpsi[6];
+		(*gradient)[3 * tetrahedron[3] + 1] += dpsi[7];
+		(*gradient)[3 * tetrahedron[3] + 2] += dpsi[8];
 
-  (*hessian) =
-      Eigen::SparseMatrix<double>(3 * num_of_vertex, 3 * num_of_vertex);
-
-  std::vector<Eigen::Triplet<double>> entry_list;
-
-  ComputeHessianNonzeroEntries(position, &entry_list);
-
-  hessian->setFromTriplets(entry_list.begin(), entry_list.end());
-}
-
-void IsotropicSVDEnergyModel3D::ComputeHessianNonzeroEntries(
-    const std::vector<Eigen::Vector3d> &position,
-    std::vector<Eigen::Triplet<double>> *entry_list)
-{
-  size_t num_of_element = mesh_.size();
-
-  for (size_t ele = 0; ele < num_of_element; ele++)
-  {
-    Eigen::Vector4i tetrahedron = mesh_[ele];
-
-    Eigen::Matrix<double, 12, 12> element_hessian;
-    ComputeElementHessian(position, ele, &element_hessian);
-
-    for (size_t x = 0; x < 4; x++)
-    {
-      for (size_t y = 0; y < 4; y++)
-      {
-        if (tetrahedron[x] < tetrahedron[y])
-        {
-          continue;
-        }
-        int m = (x + 3) % 4;
-        int n = (y + 3) % 4;
-
-        for (size_t i = 0; i < 3; i++)
-        {
-          for (size_t j = 0; j < 3; j++)
-          {
-            if (3 * tetrahedron[x] + i < 3 * tetrahedron[y] + j)
-            {
-              continue;
-            }
-            entry_list->emplace_back(3 * tetrahedron[x] + i,
-                                     3 * tetrahedron[y] + j,
-                                     element_hessian(3 * m + i, 3 * n + j));
-          }
-        }
-      }
-    }
-  }
+		(*gradient)[3 * tetrahedron[0] + 0] -= (dpsi[0] + dpsi[3] + dpsi[6]);
+		(*gradient)[3 * tetrahedron[0] + 1] -= (dpsi[1] + dpsi[4] + dpsi[7]);
+		(*gradient)[3 * tetrahedron[0] + 2] -= (dpsi[2] + dpsi[5] + dpsi[8]);
+	}
 }
 
 void IsotropicSVDEnergyModel3D::ComputeElementHessian(
@@ -365,7 +269,6 @@ void IsotropicSVDEnergyModel3D::ComputeElementHessian(
     s0_s1_transform(0, i) = ut_df_v[9 * element_index + i](0, 1);
     s0_s1_transform(1, i) = -ut_df_v[9 * element_index + i](1, 0);
 
-    // Could be wrong
     s1_s2_transform(0, i) = ut_df_v[9 * element_index + i](1, 2);
     s1_s2_transform(1, i) = -ut_df_v[9 * element_index + i](2, 1);
 
@@ -450,9 +353,13 @@ void IsotropicSVDEnergyModel3D::ComputeElementHessian(
 void IsotropicSVDEnergyModel3D::ComputeHessianNonzeroEntriesDirConstraintsInBlock(
     const std::vector<Eigen::Vector3d> &position,
     std::vector<Eigen::Triplet<double>> *entry_list,
-    const std::vector<int> &element_block)
+    const std::vector<int> &element_block,
+	data_io::SolverSpecification& solverSpec)
 {
+	static int hessian_threads_num = omp_get_max_threads();
+	entry_list->reserve(element_block.size() * 72);//half of  3D element block = 12x12/2
 
+  //sequential version 
   for (auto ele : element_block)
   {
     Eigen::Vector4i tetrahedron = mesh_[ele];
@@ -466,7 +373,7 @@ void IsotropicSVDEnergyModel3D::ComputeHessianNonzeroEntriesDirConstraintsInBloc
       {
         int m = (x + 3) % 4;
         int n = (y + 3) % 4;
-        if (tetrahedron[x] < tetrahedron[y])
+		if (tetrahedron[x] > tetrahedron[y]) //for upper triangle hessian part 
         {
           continue;
         }
@@ -474,7 +381,7 @@ void IsotropicSVDEnergyModel3D::ComputeHessianNonzeroEntriesDirConstraintsInBloc
         {
           for (size_t j = 0; j < 3; j++)
           {
-            if (3 * tetrahedron[x] + i < 3 * tetrahedron[y] + j)
+			if (3 * tetrahedron[x] + i > 3 * tetrahedron[y] + j) //upper triangle hessian
             {
               continue;
             }

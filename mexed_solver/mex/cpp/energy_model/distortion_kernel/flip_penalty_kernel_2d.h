@@ -1,5 +1,6 @@
 // Copyright @2019. All rights reserved.
-// Authors: mike323zyf@gmail.com (Yufeng Zhu)
+// Authors: mike323zyf@gmail.com (Yufeng Zhu),
+// anaitsat@campus.technion.ac.il (Alexander Naitsat)
 
 #pragma once
 

@@ -1,6 +1,6 @@
 // Copyright @2019. All rights reserved.
-// Authors: mike323zyf@gmail.com (Yufeng Zhu)
-// anaitsat@campus.ac.il (Alexander Naitsat)
+// Authors: anaitsat@campus.technion.ac.il (Alexander Naitsat)
+// 			mike323zyf@gmail.com (Yufeng Zhu)
 #pragma once
 
 #include <vector>
@@ -14,21 +14,6 @@ namespace common
 {
 namespace optimization
 {
-void ArmijoLineSearch(const std::vector<Eigen::Vector2d>& deformed,
-                      const Eigen::VectorXd& search_direction,
-                      mesh_distortion::IsotropicSVDEnergyModel2D& model,
-                      std::vector<Eigen::Vector2d>* output);
-
-
-double ArmijoLineSearchInBlock(const std::vector<Eigen::Vector2d>& deformed,
-								const Eigen::VectorXd& search_direction,
-								mesh_distortion::IsotropicSVDEnergyModel2D& model,
-								std::vector<Eigen::Vector2d>* output,
-								const Eigen::VectorXd& dfk,
-								double fk,
-								const std::vector<int>& element_block,
-								const std::vector<int>& free_vertex_block,
-								const data_io::SolverSpecification& solverSpec);
 
 
 double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& deformed,
@@ -41,11 +26,18 @@ double ArmijoLineSearchEnhancedInBlock(const std::vector<Eigen::Vector2d>& defor
 										const std::vector<int>& free_vertex_block,
 										const data_io::SolverSpecification& solverSpec
 										);
+//overloaded 3d version 
+double ArmijoLineSearchEnhancedInBlock3D(const std::vector<Eigen::Vector3d>& deformed,
+										const Eigen::VectorXd& search_direction,
+										mesh_distortion::IsotropicSVDEnergyModel3D& model,
+										std::vector<Eigen::Vector3d>* output,
+										const Eigen::VectorXd& dfk,
+										double fk,
+										const std::vector<int>& element_block,
+										const std::vector<int>& free_vertex_block,
+										const data_io::SolverSpecification& solverSpec
+									);
 
-
-Eigen::Vector3d compute_min_step_to_singularities(const std::vector<Eigen::Vector2d>& uv, 
-									 	 const std::vector<Eigen::Vector3i>& F,
-										 const Eigen::VectorXd& d);
 
 Eigen::Vector3d compute_min_step_to_singularities_inBlock(const std::vector<Eigen::Vector2d>& uv,
 														const std::vector<Eigen::Vector3i>& F,
@@ -53,12 +45,13 @@ Eigen::Vector3d compute_min_step_to_singularities_inBlock(const std::vector<Eige
 														const std::vector<int>& element_block,
 														mesh_distortion::IsotropicSVDEnergyModel2D& model);
 
-void ArmijoLineSearch3D(const std::vector<Eigen::Vector3d> &deformed,
-						const Eigen::VectorXd &search_direction,
-						mesh_distortion::IsotropicSVDEnergyModel3D &model,
-						std::vector<Eigen::Vector3d> *output);
+Eigen::Vector3d compute_min_step_to_singularities_3d_inBlock(const std::vector<Eigen::Vector3d>& uv,
+															const std::vector<Eigen::Vector4i>& F,
+															const Eigen::VectorXd& d,
+															const std::vector<int>& element_block,
+															mesh_distortion::IsotropicSVDEnergyModel3D& model);
 
-						
+					
 double ArmijoLineSearchInBlock3D(const std::vector<Eigen::Vector3d> &deformed,
 								 const Eigen::VectorXd &search_direction,
 								 mesh_distortion::IsotropicSVDEnergyModel3D &model,
@@ -66,6 +59,7 @@ double ArmijoLineSearchInBlock3D(const std::vector<Eigen::Vector3d> &deformed,
 								 const Eigen::VectorXd &dfk,
 								 double fk,
 								 const std::vector<int> &element_block,
-								 const std::vector<int> &free_vertex_block);
+								 const std::vector<int> &free_vertex_block,
+								const data_io::SolverSpecification& solverSpec);
 } // namespace optimization
 } // namespace common
