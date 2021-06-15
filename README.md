@@ -3,7 +3,7 @@
 Adaptive block coordinate descent (ABCD) is a new algorithm for optimizing geometric distortions and computing  inversion-free maps in 2D and 3D.
 This code  has a  Matlab I/O interface and C++ implementation of ABCD algorithm with gradient descent (GD) and projected Newton (PN) solvers. 
 
-[`Paper`](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.14043) [`Video `](https://sgp2020.sites.uu.nl/programme/#optimization)  
+[`DOI`](https://onlinelibrary.wiley.com/doi/abs/10.1111/cgf.14043)  [`Paper`](https://alexnaitsat.github.io/html/projects/abcd/abcd_submitted_version.pdf)  [`Video `](https://sgp2020.sites.uu.nl/programme/#optimization)  
 
 ## Dependencies
 
@@ -35,12 +35,12 @@ ABCD_PN_demo
 ## Data formats
 Examples of different input formats are shown in  the demo script
 ### 2D input
-We support obj files (with or without texture)  or  mat files that contain vertices, triangles and initialization (T, V, fV)
+We support obj files (with or without texture)  or  mat files that contain triangles, vertices and initialization (T, V, fV)
 
 * Specify in ``` options.is_uv_mesh``` if it is a surface parametrization or a planar deformation problem 
 
 ### 3D input
-We support  mat files that contain  vertices, tetrahedrons and initialization (T, V, fV)
+We support  mat files that contain  tetrahedrons, vertices and initialization (T, V, fV)
 
 ### Solver specifications
 We set all ABCD parameters at the beginning of the demo script (```optimzier_spec``` and  ```fixer_spec``` structs).
@@ -67,7 +67,7 @@ Note that ABCD is a highly customizable solver and  you can reconfigure it  by c
     tolerance            : termination criteria
                 
     K_hat_list           : partitioning thresholds (if not set, then 
-    K_hat_size:          : local-global blending is disabled)
+    K_hat_size           : local-global blending is disabled)
 ```
 
 * Additional parameters in ```options``` struct:
